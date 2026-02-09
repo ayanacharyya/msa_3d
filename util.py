@@ -51,17 +51,23 @@ def parse_args():
     # ------- args added for make_msa3d_line_maps.py ------------------------------
     parser.add_argument('--line_list', metavar='line_list', type=str, action='store', default='all', help='Which emission lines to look for? Default is all') # OR set default to 'Lya,OII,Hb,OIII,Ha,Ha+NII,SII,SIII,PaB,He-1083,PaA'
     parser.add_argument('--snr_cut', metavar='snr_cut', type=float, action='store', default=None, help='Impose an SNR cut on the emission line maps to; default is 0')
-    parser.add_argument('--flam_max', metavar='flam_max', type=float, action='store', default=None, help='Maximum y-axis limit for f_lambda (in units of 1e-19 ergs/s/cm^2/A); default is None')
-    parser.add_argument('--debug_offset', dest='debug_offset', action='store_true', default=False, help='Do extra plots and prints for debugging offset calculation from center? Default is no.')
+    parser.add_argument('--flam_max', metavar='flam_max', type=float, action='store', default=10, help='Maximum y-axis limit for f_lambda (in units of 1e-19 ergs/s/cm^2/A); default is None')
+    parser.add_argument('--mask_window', metavar='mask_window', type=float, action='store', default=30, help='Wavelength window around expected emission lines to mask out, before fitting continuum, in Angstrom; default is 50')
+    parser.add_argument('--tie_vdisp', dest='tie_vdisp', action='store_true', default=False, help='Tie the velocity dispersion of all lines to be the same? Default is no.')
 
-    parser.add_argument('--plot_radial_profiles', dest='plot_radial_profiles', action='store_true', default=False, help='Plot radial profiles corresponding to the 2D maps? Default is no.')
-    parser.add_argument('--plot_ratio_maps', dest='plot_ratio_maps', action='store_true', default=False, help='Plot the line ratio maps for a given 2D plot? Default is no.')
-    parser.add_argument('--plot_snr', dest='plot_snr', action='store_true', default=False, help='Plot the SNR map for a given 2D plot? Default is no.')
+    parser.add_argument('--debug_offset', dest='debug_offset', action='store_true', default=False, help='Do extra plots and prints for debugging offset calculation from center? Default is no.')
+    parser.add_argument('--debug_linefit', dest='debug_linefit', action='store_true', default=False, help='Do extra plots and prints for debugging emission line fitting? Default is no.')
+    parser.add_argument('--show_log_flux', dest='show_log_flux', action='store_true', default=False, help='Display line fitting spectrum plots in log-scale in y-axis? Default is no.')
+
+    parser.add_argument('--plot_line_maps', dest='plot_line_maps', action='store_true', default=False, help='Plot the line flux maps for a given galaxy? Default is no.')
+    parser.add_argument('--plot_ratio_maps', dest='plot_ratio_maps', action='store_true', default=False, help='Plot the line ratio maps for a given galaxy? Default is no.')
+    parser.add_argument('--plot_snr', dest='plot_snr', action='store_true', default=False, help='Plot the SNR map for a given galaxy? Default is no.')
 
     # ------- args added for make_metallicity_sfr_maps.py ------------------------------
     parser.add_argument('--plot_ionisation_parameter', dest='plot_ionisation_parameter', action='store_true', default=False, help='Plot the plot_ionisation_parameter map along with metallicity? Default is no.')
     parser.add_argument('--plot_DIG', dest='plot_DIG', action='store_true', default=False, help='Plot DIG diagnostics? Default is no.')
     parser.add_argument('--plot_BPT', dest='plot_BPT', action='store_true', default=False, help='Plot BPT? Default is no.')
+    parser.add_argument('--plot_radial_profiles', dest='plot_radial_profiles', action='store_true', default=False, help='Plot radial profiles corresponding to the 2D maps? Default is no.')
 
     parser.add_argument('--plot_metallicity', dest='plot_metallicity', action='store_true', default=False, help='Plot the metallicity map instead of the full diagnostic figure? Default is no.')
     parser.add_argument('--Zbranch', metavar='Zbranch', type=str, action='store', default='low', help='Which R23 branch to be used (choose between high/low)? Default is low')
@@ -123,7 +129,7 @@ def get_zrange_for_line(line, obs_wave_range=[800, 2200]):
     Returns min and max redshift
     '''
     if type(line) in [float, int, np.float64, np.int64]: rest_wave = line
-    elif type(line) in [str, np.str_]: rest_wave = rest_wave_dict[line]
+    elif type(line) in [str, np.str_]: rest_wave = rest_wave_dict[line] / 10 # to convert from Angstrom to nm
 
     z_min = (obs_wave_range[0] / rest_wave) - 1
     z_max = (obs_wave_range[1] / rest_wave) - 1
@@ -485,7 +491,7 @@ def annotate_axes(ax, xlabel, ylabel, args=None, fontsize=10, fontfactor=1, labe
     return ax
 
 # --------------------------------------------------------------------------------------------------------------------
-def save_fig(fig, fig_dir, figname, args):
+def save_fig(fig, fig_dir, figname, args, silent=False):
     '''
     Saves a given figure handle as a given output filename
     '''
@@ -500,8 +506,24 @@ def save_fig(fig, fig_dir, figname, args):
     fig_dir.mkdir(exist_ok=True, parents=True)
     figname = fig_dir / figname
     fig.savefig(figname, transparent=args.fortalk)
-    print(f'\nSaved figure as {figname}')
+    if not silent: print(f'\nSaved figure as {figname}')
     plt.show(block=False)
 
     return
 
+# --------------------------------------------------------------------------------------------------------------------
+def make_colorbar_top(fig, axes, clabel, cmap, cmin, cmax, ncbins, fontsize, aspect=60):
+    '''
+    Creates a shared colorbar for the whole figure, at the top of the figure
+    Returns figure handle
+    '''
+    norm = mplcolors.Normalize(vmin=cmin, vmax=cmax)
+    sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
+
+    cbar = fig.colorbar(sm, ax=axes, location='top', shrink=0.95, pad=0.01, aspect=aspect)
+    cbar.set_label(clabel, fontsize=fontsize, labelpad=5)    
+    cbar.ax.tick_params(labelsize=fontsize)
+    cbar.locator = matplotlib.ticker.MaxNLocator(integer=False, nbins=ncbins)#, prune='both')
+    cbar.update_ticks()
+
+    return fig

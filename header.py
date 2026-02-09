@@ -27,7 +27,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 import pandas as pd
 from importlib import reload
-from scipy.interpolate import interp1d
+from scipy.interpolate import interp1d, UnivariateSpline
 from scipy.ndimage import gaussian_filter1d
 from scipy.optimize import curve_fit
 from scipy.optimize import minimize
@@ -43,6 +43,7 @@ from astropy import wcs as pywcs
 from astropy.io import fits
 from astropy.cosmology import Planck18
 from astropy.cosmology import FlatLambdaCDM
+from astropy.constants import c
 
 from uncertainties import unumpy as unp
 from uncertainties import ufloat
@@ -73,19 +74,20 @@ plt.rcParams['xtick.top'] = True
 
 HOME = Path.home()
 
-rest_wave_dict = {'OIII-4363': 436.3209,
-                  'H-beta': 486.1333,
-                  'OIII-5007': 500.8239,
-                  'OI-6302': 630.2047,
-                  'NII-6548': 654.986,
-                  'H-alpha': 656.4632,
-                  'NII-6584': 658.5273,
-                  'SII-6717': 671.830,
-                  'SII-6730': 673.2674,
-                  }  # approximate wavelengths in nm
+rest_wave_dict = {'OIII-4363': 4363.209,
+                  'H-beta': 4861.333,
+                  'OIII-5007': 5008.239,
+                  'OI-6302': 6302.047,
+                  'NII-6548': 6549.86,
+                  'H-alpha': 6564.632,
+                  'NII-6584': 6585.273,
+                  'SII-6717': 6718.30,
+                  'SII-6730': 6732.674,
+                  }  # approximate wavelengths in Angstroms
 
 # Set up necessary variables for cosmological calculations.
 cosmo = FlatLambdaCDM(H0=69.5, Om0=0.285, Ob0=0.0461)
+c_km_s = c.to(u.km / u.s).value
 
 # --- Enable autoreload when running in IPython ---
 try:
