@@ -52,11 +52,14 @@ def parse_args():
     parser.add_argument('--line_list', metavar='line_list', type=str, action='store', default='all', help='Which emission lines to look for? Default is all') # OR set default to 'Lya,OII,Hb,OIII,Ha,Ha+NII,SII,SIII,PaB,He-1083,PaA'
     parser.add_argument('--snr_cut', metavar='snr_cut', type=float, action='store', default=None, help='Impose an SNR cut on the emission line maps to; default is 0')
     parser.add_argument('--flam_max', metavar='flam_max', type=float, action='store', default=10, help='Maximum y-axis limit for f_lambda (in units of 1e-19 ergs/s/cm^2/A); default is None')
-    parser.add_argument('--mask_window', metavar='mask_window', type=float, action='store', default=30, help='Wavelength window around expected emission lines to mask out, before fitting continuum, in Angstrom; default is 50')
+    parser.add_argument('--mask_window', metavar='mask_window', type=float, action='store', default=30, help='Wavelength window around expected emission lines to mask out, before fitting continuum, in Angstrom; default is 30')
+    parser.add_argument('--group_gap', metavar='group_gap', type=float, action='store', default=150, help='Wavelength window to consider for make friends-of-friends neighbouring line list, in Angstrom; default is 150')
+    parser.add_argument('--fit_padding', metavar='fit_padding', type=float, action='store', default=10, help='Wavelength window to pad on either side of a neighbouring line list, in Angstrom; default is 10')
     parser.add_argument('--tie_vdisp', dest='tie_vdisp', action='store_true', default=False, help='Tie the velocity dispersion of all lines to be the same? Default is no.')
 
     parser.add_argument('--debug_offset', dest='debug_offset', action='store_true', default=False, help='Do extra plots and prints for debugging offset calculation from center? Default is no.')
     parser.add_argument('--debug_linefit', dest='debug_linefit', action='store_true', default=False, help='Do extra plots and prints for debugging emission line fitting? Default is no.')
+    parser.add_argument('--save_linefit_plot', dest='save_linefit_plot', action='store_true', default=False, help='Save the plot for emission line fitting in each spaxel? Default is no.')
     parser.add_argument('--show_log_flux', dest='show_log_flux', action='store_true', default=False, help='Display line fitting spectrum plots in log-scale in y-axis? Default is no.')
 
     parser.add_argument('--plot_line_maps', dest='plot_line_maps', action='store_true', default=False, help='Plot the line flux maps for a given galaxy? Default is no.')
@@ -523,7 +526,7 @@ def make_colorbar_top(fig, axes, clabel, cmap, cmin, cmax, ncbins, fontsize, asp
     cbar = fig.colorbar(sm, ax=axes, location='top', shrink=0.95, pad=0.01, aspect=aspect)
     cbar.set_label(clabel, fontsize=fontsize, labelpad=5)    
     cbar.ax.tick_params(labelsize=fontsize)
-    cbar.locator = matplotlib.ticker.MaxNLocator(integer=False, nbins=ncbins)#, prune='both')
+    cbar.locator = ticker.MaxNLocator(integer=False, nbins=ncbins)#, prune='both')
     cbar.update_ticks()
 
     return fig

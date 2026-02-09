@@ -65,6 +65,7 @@ from matplotlib import cm as mpl_cm
 from matplotlib.backends.backend_pdf import PdfPages
 import mplcyberpunk
 import matplotlib.patches as patches
+import matplotlib.ticker as ticker
 from matplotlib.collections import PatchCollection
 from matplotlib import pyplot as plt
 plt.rcParams['ytick.direction'] = 'in'
