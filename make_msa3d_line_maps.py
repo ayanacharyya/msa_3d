@@ -430,7 +430,7 @@ def plot_line_flux_maps(fit_results, args):
     # --------------setting up figures------------------------
     show_log = True
     nrow, ncol = 2, 5
-    if show_log: cmin, cmax, ncbins = -2, 2, 5
+    if show_log: cmin, cmax, ncbins = -1.5, 1.5, 6
     else: cmin, cmax, ncbins = 0, 35, 4
     cmin_snr, cmax_snr = 1, 10
     cmap = 'cividis'
@@ -480,16 +480,16 @@ def plot_line_maps(fit_results, line, args):
     '''
     # --------------setting up figures------------------------
     nrow, ncol = 1, 3
-    cmin_dict = {'flux': -1.5, 'vel': -50, 'sigma': 0}
-    cmax_dict = {'flux': 1.5, 'vel': 50, 'sigma': 200}
+    cmin_dict = {'flux': -1.5, 'vel': -100, 'sigma': 0}
+    cmax_dict = {'flux': 1.5, 'vel': 100, 'sigma': 200}
     cmap_dict = {'flux': 'cividis', 'vel':'PuOr', 'sigma': 'plasma'}
     take_log_dict = {'flux': True, 'vel': False, 'sigma': False}
     
     cmin_snr, cmax_snr = 1, 10
     
-    fig, axes = plt.subplots(nrow, ncol, figsize=(8, 4), layout='constrained')
+    fig, axes = plt.subplots(nrow, ncol, figsize=(10, 4.5))
     if args.plot_snr:
-        fig_snr, axes_snr = plt.subplots(nrow, ncol, figsize=(8, 6), layout='constrained')
+        fig_snr, axes_snr = plt.subplots(nrow, ncol, figsize=(10, 4.5), layout='constrained')
 
     # ----------looping through fitted parameters--------------------
     for index, param in enumerate(['flux', 'vel', 'sigma']):
@@ -501,7 +501,7 @@ def plot_line_maps(fit_results, line, args):
             snrmap = map / map_u
             axes_snr[index] = plot_2D_map(snrmap, axes_snr[index], f'{param}: SNR', args, cmap='viridis', takelog=False, vmin=cmin_snr, vmax=cmax_snr, hide_xaxis=False, hide_yaxis=index > 0, hide_cbar=False)
 
-    fig.text(0.15, 0.9, f'ID {args.id}: {line}', fontsize=args.fontsize, c='k', ha='left', va='top')
+    fig.text(0.1, 0.98, f'ID {args.id}: {line}', fontsize=args.fontsize, c='k', ha='left', va='top')
     if args.plot_snr: fig_snr.text(0.15, 0.9, f'ID {args.id}: {line} SNR', fontsize=args.fontsize, c='k', ha='left', va='top')
 
     # ---------saving figures-------------------
