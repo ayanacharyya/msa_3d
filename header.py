@@ -61,6 +61,7 @@ import NebulaBayes
 
 import matplotlib
 from mpl_toolkits.axes_grid1.axes_divider import make_axes_locatable
+from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 from matplotlib import colors as mplcolors
 from matplotlib import colormaps as mplcolormaps
 from matplotlib import cm as mpl_cm
@@ -69,6 +70,7 @@ import mplcyberpunk
 import matplotlib.patches as patches
 import matplotlib.ticker as ticker
 from matplotlib.collections import PatchCollection
+
 from matplotlib import pyplot as plt
 plt.rcParams['ytick.direction'] = 'in'
 plt.rcParams['ytick.right'] = True
@@ -79,6 +81,7 @@ HOME = Path.home()
 
 rest_wave_dict = {'OIII-4363': 4363.209,
                   'H-beta': 4861.333,
+                  'OIII-4959': 4958.911,
                   'OIII-5007': 5008.239,
                   'OI-6302': 6302.047,
                   'NII-6548': 6549.86,

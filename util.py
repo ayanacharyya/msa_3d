@@ -62,7 +62,8 @@ def parse_args():
     parser.add_argument('--save_linefit_plot', dest='save_linefit_plot', action='store_true', default=False, help='Save the plot for emission line fitting in each spaxel? Default is no.')
     parser.add_argument('--show_log_flux', dest='show_log_flux', action='store_true', default=False, help='Display line fitting spectrum plots in log-scale in y-axis? Default is no.')
 
-    parser.add_argument('--plot_line_maps', dest='plot_line_maps', action='store_true', default=False, help='Plot the line flux maps for a given galaxy? Default is no.')
+    parser.add_argument('--plot_flux_maps', dest='plot_flux_maps', action='store_true', default=False, help='Plot the line flux maps for a given galaxy? Default is no.')
+    parser.add_argument('--plot_line_maps', dest='plot_line_maps', action='store_true', default=False, help='Plot the line flux and kinematic maps for a given galaxy and given line? Default is no.')
     parser.add_argument('--plot_ratio_maps', dest='plot_ratio_maps', action='store_true', default=False, help='Plot the line ratio maps for a given galaxy? Default is no.')
     parser.add_argument('--plot_snr', dest='plot_snr', action='store_true', default=False, help='Plot the SNR map for a given galaxy? Default is no.')
 

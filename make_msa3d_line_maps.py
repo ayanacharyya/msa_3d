@@ -4,8 +4,9 @@
     Author : Ayan
     Created: 06-02-26
     Example: run make_msa3d_line_maps.py --do_all_obj
-             run make_msa3d_line_maps.py --id 2145 --plot_line_maps --save_linefit_plot --n_cores 1
-             run make_msa3d_line_maps.py --id 2145 --plot_line_maps --debug_linefit 10,20
+             run make_msa3d_line_maps.py --id 2145 --plot_flux_maps --save_linefit_plot --n_cores 4
+             run make_msa3d_line_maps.py --id 2145 --plot_line_maps
+             run make_msa3d_line_maps.py --id 2145 --debug_linefit 22,12
 '''
 
 from header import *
@@ -36,7 +37,7 @@ def get_ifu_cube(cube_fits_file):
     return cube, cube_err, wavelengths, wcs
 
 # --------------------------------------------------------------------------------------------------------------------
-def linefit_cube(cube, wavelengths, args, cube_err=None, flam_col='flam', flam_u_col='flam_u', wave_col='rest_wave', label_col='labels', cont_col='cont', n_cores=None):
+def linefit_cube(cube, wavelengths, args, cube_err=None, flam_col='flam', flam_u_col='flam_u', wave_col='rest_wave', label_col='labels', cont_col='cont', snr_thresh=1.5):
     '''
     Runs spaxel-by-spaxel emission line fitting of the emission line list provided (as args.line_list)
     Accounts for the corresponding errorcube, if provided
@@ -68,13 +69,13 @@ def linefit_cube(cube, wavelengths, args, cube_err=None, flam_col='flam', flam_u
     fit_results = {}
     params = ['flux', 'flux_err', 'vel', 'vel_err', 'sigma', 'sigma_err']
     for label in df_lines[label_col]:
-        fit_results[label] = {p: np.full((nx, ny), np.nan) for p in params}
+        fit_results[label] = {p: np.full((np.shape(cube)[1], np.shape(cube)[2]), np.nan) for p in params}
 
     start_time3 = datetime.now()
     # ----------parallelising--------------
     if args.n_cores > 1:
         spaxel_indices = [(x, y) for y in range(ny) for x in range(nx)]
-        worker_func = partial(linefit_spaxel, cube=cube, cube_err=cube_err, rest_wave_arr=rest_wave_arr, df_lines=df_lines, line_groups=line_groups, args=args, flam_col=flam_col, flam_u_col=flam_u_col, wave_col=wave_col, label_col=label_col, cont_col=cont_col) # Use partial to fix the arguments that don't change
+        worker_func = partial(linefit_spaxel, cube=cube, cube_err=cube_err, rest_wave_arr=rest_wave_arr, df_lines=df_lines, line_groups=line_groups, args=args, flam_col=flam_col, flam_u_col=flam_u_col, wave_col=wave_col, label_col=label_col, cont_col=cont_col, snr_thresh=snr_thresh) # Use partial to fix the arguments that don't change
 
         print(f'\t\tStarting fit on {ny*nx} spaxels using {args.n_cores} cores...')
         
@@ -121,7 +122,7 @@ def linefit_cube(cube, wavelengths, args, cube_err=None, flam_col='flam', flam_u
     return fit_results
 
 # --------------------------------------------------------------------------------------------------------------------
-def linefit_spaxel(coords, cube, cube_err, rest_wave_arr, df_lines, line_groups, args, flam_col='flam', flam_u_col='flam_u', wave_col='rest_wave', label_col='labels', cont_col='cont'):
+def linefit_spaxel(coords, cube, cube_err, rest_wave_arr, df_lines, line_groups, args, flam_col='flam', flam_u_col='flam_u', wave_col='rest_wave', label_col='labels', cont_col='cont', snr_thresh=1.5):
     '''
     Runs emission line fitting on one spectrum (spaxel) of the emission line wavelengths provided (df_lines)
     Accounts for the corresponding error spectrum, if provided
@@ -132,6 +133,22 @@ def linefit_spaxel(coords, cube, cube_err, rest_wave_arr, df_lines, line_groups,
     flux = cube[:, i, j]
     if cube_err is None: flux_err = np.zeros(np.shape(flux))
     else: flux_err = cube_err[:, i, j]
+
+   # ---------initialising fit result dict-----------------
+    fit_results_spaxel = {}
+    params = ['flux', 'flux_err', 'vel', 'vel_err', 'sigma', 'sigma_err']
+    for label in df_lines[label_col]:
+        fit_results_spaxel[label] = {p: np.nan for p in params}
+    
+    # --------checking to ensure fitting only for not too noisy spaxels---------
+    signal = np.nanmedian(flux)
+    if cube_err is None: noise = np.nanstd(flux)
+    else: noise = np.nanmedian(flux_err)
+    snr = signal / noise
+
+    if snr < snr_thresh:
+        print(f'\t\t..spaxel too noisy, so skipping fitting..')
+        return (i, j, fit_results_spaxel)
 
     # -------initiliasing and filtering spectrum dataframe------------
     df_spec = pd.DataFrame({wave_col: rest_wave_arr, 
@@ -147,7 +164,7 @@ def linefit_spaxel(coords, cube, cube_err, rest_wave_arr, df_lines, line_groups,
     if len(df_spec) > 0:
         fit_results_spaxel = linefit_spectrum(df_spec, df_lines, line_groups, args, i=i, j=j, flam_col=flam_col, flam_u_col=flam_u_col, wave_col=wave_col, label_col=label_col, cont_col=cont_col)                
     elif not args.silent:
-        print(f'\t\t..no valid spectrum in this cell. Moving on..')
+        print(f'\t\t..no valid spectrum in this spaxel. Moving on..')
 
     return (i, j, fit_results_spaxel)
 
@@ -363,8 +380,8 @@ def save_line_maps_fits(fit_results, maps_fits_file, wcs, args):
     params = [
         ('flux', 'FLUX', 'erg/s/cm2'),
         ('flux_err', 'FLUX_ERR', 'erg/s/cm2'),
-        ('v_los', 'VEL', 'km/s'),
-        ('v_err', 'VEL_ERR', 'km/s'),
+        ('vel', 'VEL', 'km/s'),
+        ('vel_err', 'VEL_ERR', 'km/s'),
         ('sigma', 'SIGMA', 'km/s'),
         ('sigma_err', 'SIGMA_ERR', 'km/s')
     ]
@@ -405,15 +422,17 @@ def plot_2D_map(image, ax, label, args, cmap='cividis', clabel='', takelog=True,
     return ax
 
 # --------------------------------------------------------------------------------------------------------------------
-def plot_line_maps(fit_results, args):
+def plot_line_flux_maps(fit_results, args):
     '''
-    Plots the N emission line maps in one figure and saves it to file
+    Plots the N emission line flux maps in one figure and saves it to file
     Returns the figure handle
     '''
     # --------------setting up figures------------------------
+    show_log = True
     nrow, ncol = 2, 5
-    cmin, cmax, ncbins = None, None, 5 #-19, -16, 5
-    cmin_snr, cmax_snr = 0, 10
+    if show_log: cmin, cmax, ncbins = -2, 2, 5
+    else: cmin, cmax, ncbins = 0, 35, 4
+    cmin_snr, cmax_snr = 1, 10
     cmap = 'cividis'
     fig, axes = plt.subplots(nrow, ncol, figsize=(8, 6), layout='constrained')
 
@@ -421,21 +440,22 @@ def plot_line_maps(fit_results, args):
         fig_snr, axes_snr = plt.subplots(nrow, ncol, figsize=(8, 6), layout='constrained')
 
     # ----------plot line maps--------------------
-    for index, fitted_line in enumerate(list(fit_results.keys())):
+    available_lines = list(fit_results.keys())
+    for index, fitted_line in enumerate(available_lines):
         row = index // ncol
         col = index % ncol
         
         # ------------extract linemap from fit_results dict--------------
         fluxmap = fit_results[fitted_line]['flux']
-        axes[row, col] = plot_2D_map(fluxmap, axes[row, col], f'{args.line_list[index]}', args, cmap=cmap, takelog=True, vmin=cmin, vmax=cmax, hide_xaxis=row < nrow - 1, hide_yaxis=col > 0)
+        axes[row, col] = plot_2D_map(fluxmap, axes[row, col], f'{available_lines[index]}', args, cmap=cmap, takelog=show_log, vmin=cmin, vmax=cmax, hide_xaxis=row < nrow - 1, hide_yaxis=col > 0)
 
         if args.plot_snr:
             errmap = fit_results[fitted_line]['flux_err']
             snrmap = fluxmap / errmap
-            axes_snr[row, col] = plot_2D_map(snrmap, axes_snr[row, col], f'{args.line_list[index]}: SNR', args, cmap=cmap, takelog=False, vmin=cmin_snr, vmax=cmax_snr, hide_xaxis=row < nrow - 1, hide_yaxis=col > 0)
+            axes_snr[row, col] = plot_2D_map(snrmap, axes_snr[row, col], f'{available_lines[index]}: SNR', args, cmap=cmap, takelog=False, vmin=cmin_snr, vmax=cmax_snr, hide_xaxis=row < nrow - 1, hide_yaxis=col > 0)
 
    # --------common colorbar------------------
-    fig = make_colorbar_top(fig, axes, f'{args.id}: Flux', cmap, cmin, cmax, ncbins, args.fontsize, aspect=60)
+    fig = make_colorbar_top(fig, axes, f'ID {args.id}: Log flux' if show_log else f'ID {args.id}: Flux', cmap, cmin, cmax, ncbins, args.fontsize, aspect=60)
     if args.plot_snr: fig_snr = make_colorbar_top(fig_snr, axes_snr, f'{args.id}: SNR', cmap, cmin_snr, cmax_snr, ncbins, args.fontsize, aspect=60)
 
     # ----------to remove empty subplots--------------------
@@ -449,6 +469,45 @@ def plot_line_maps(fit_results, args):
     figname = f'{args.id}_fluxmaps.png'
     save_fig(fig, args.fig_dir, figname, args)    
     if args.plot_snr: save_fig(fig_snr, args.fig_dir, Path(str(figname).replace('flux', 'snr')), args)
+
+    return fig
+
+# --------------------------------------------------------------------------------------------------------------------
+def plot_line_maps(fit_results, line, args):
+    '''
+    Plots the emission line flux and kinematic maps in one figure and saves it to file
+    Returns the figure handle
+    '''
+    # --------------setting up figures------------------------
+    nrow, ncol = 1, 3
+    cmin_dict = {'flux': -1.5, 'vel': -50, 'sigma': 0}
+    cmax_dict = {'flux': 1.5, 'vel': 50, 'sigma': 200}
+    cmap_dict = {'flux': 'cividis', 'vel':'PuOr', 'sigma': 'plasma'}
+    take_log_dict = {'flux': True, 'vel': False, 'sigma': False}
+    
+    cmin_snr, cmax_snr = 1, 10
+    
+    fig, axes = plt.subplots(nrow, ncol, figsize=(8, 4), layout='constrained')
+    if args.plot_snr:
+        fig_snr, axes_snr = plt.subplots(nrow, ncol, figsize=(8, 6), layout='constrained')
+
+    # ----------looping through fitted parameters--------------------
+    for index, param in enumerate(['flux', 'vel', 'sigma']):
+        map = fit_results[line][param]
+        axes[index] = plot_2D_map(map, axes[index], f'{param}', args, cmap=cmap_dict[param], takelog=take_log_dict[param], vmin=cmin_dict[param], vmax=cmax_dict[param], hide_xaxis=False, hide_yaxis=index > 0, hide_cbar=False)
+
+        if args.plot_snr:
+            map_u = fit_results[line][f'{param}_err']
+            snrmap = map / map_u
+            axes_snr[index] = plot_2D_map(snrmap, axes_snr[index], f'{param}: SNR', args, cmap='viridis', takelog=False, vmin=cmin_snr, vmax=cmax_snr, hide_xaxis=False, hide_yaxis=index > 0, hide_cbar=False)
+
+    fig.text(0.15, 0.9, f'ID {args.id}: {line}', fontsize=args.fontsize, c='k', ha='left', va='top')
+    if args.plot_snr: fig_snr.text(0.15, 0.9, f'ID {args.id}: {line} SNR', fontsize=args.fontsize, c='k', ha='left', va='top')
+
+    # ---------saving figures-------------------
+    figname = f'{args.id}_{line}_fitted_maps.png'
+    save_fig(fig, args.fig_dir, figname, args)    
+    if args.plot_snr: save_fig(fig_snr, args.fig_dir, Path(str(figname).replace('maps', 'snr')), args)
 
     return fig
 
@@ -468,8 +527,8 @@ def read_line_maps_fits(filename):
     suffix_to_key = {
         'FLUX': 'flux',
         'FLUX_ERR': 'flux_err',
-        'VEL': 'v_los',
-        'VEL_ERR': 'v_err',
+        'VEL': 'vel',
+        'VEL_ERR': 'vel_err',
         'SIGMA': 'sigma',
         'SIGMA_ERR': 'sigma_err'
     }
@@ -504,8 +563,10 @@ if __name__ == "__main__":
     args.fontfactor = 1.2
     args.id_arr = args.id
     
-    args.arcsec_limit_x = 1.8
-    args.arcsec_limit_y = 3.0
+    # ------------MSA-3D properties hard-coded------------------
+    msa_3d_wave_lim = [970, 1820] # NIRSpec G140H/F100LP wavelength range in nm
+    args.arcsec_limit_x = 1.8 # arcseconds
+    args.arcsec_limit_y = 3.0 # arcseconds
     args.extent = (-args.arcsec_limit_x/2, args.arcsec_limit_x/2, -args.arcsec_limit_y/2, args.arcsec_limit_y/2)
 
     # -------------setup directories and global variables----------------
@@ -521,7 +582,6 @@ if __name__ == "__main__":
     ndf = len(df)
 
     # ----------curtail dataframe to relevant redshifts------------
-    msa_3d_wave_lim = [970, 1820] # in nm
     hbeta_zlim = get_zrange_for_line('H-beta', obs_wave_range=msa_3d_wave_lim)
     halpha_zlim = get_zrange_for_line('H-alpha', obs_wave_range=msa_3d_wave_lim)
     zlim = (hbeta_zlim[0], halpha_zlim[1])
@@ -549,7 +609,7 @@ if __name__ == "__main__":
             cube, cube_err, wavelengths, wcs = get_ifu_cube(args.cube_fits_file)
 
             # -----------emission line fitting--------------
-            fit_results = linefit_cube(cube, wavelengths, args, cube_err=cube_err)
+            fit_results = linefit_cube(cube, wavelengths, args, cube_err=cube_err, snr_thresh=1.5)
 
             # -----------save the emission maps in fits file-------------
             save_line_maps_fits(fit_results, args.maps_fits_file, wcs, args)
@@ -557,7 +617,8 @@ if __name__ == "__main__":
             fit_results, spatial_header = read_line_maps_fits(args.maps_fits_file)
         
         # --------plot the emission line maps-------------
-        if args.plot_line_maps: fig = plot_line_maps(fit_results, args)
+        if args.plot_flux_maps: fig = plot_line_flux_maps(fit_results, args)
+        if args.plot_line_maps: fig = plot_line_maps(fit_results, 'H-alpha', args)
 
         print(f'\nCompleted ID {args.id} in {timedelta(seconds=(datetime.now() - start_time2).seconds)}, {len(df) - index - 1} to go!')
 
