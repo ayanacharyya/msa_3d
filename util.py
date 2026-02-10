@@ -56,6 +56,7 @@ def parse_args():
     parser.add_argument('--group_gap', metavar='group_gap', type=float, action='store', default=150, help='Wavelength window to consider for make friends-of-friends neighbouring line list, in Angstrom; default is 150')
     parser.add_argument('--fit_padding', metavar='fit_padding', type=float, action='store', default=20, help='Wavelength window to pad on either side of a neighbouring line list, in Angstrom; default is 10')
     parser.add_argument('--tie_vdisp', dest='tie_vdisp', action='store_true', default=False, help='Tie the velocity dispersion of all lines to be the same? Default is no.')
+    parser.add_argument('--n_cores', metavar='n_cores', type=int, action='store', default=None, help='Number of cores to use in parallel for line fitting; default is None, i.e. all available cores')
 
     parser.add_argument('--debug_linefit', dest='debug_linefit', type=str, action='store', default=None, help='Debug the line fitting at a specific pixel (comma separated)? Default is no.')
     parser.add_argument('--save_linefit_plot', dest='save_linefit_plot', action='store_true', default=False, help='Save the plot for emission line fitting in each spaxel? Default is no.')
@@ -121,6 +122,9 @@ def parse_args():
         setup_plots_for_talks()
 
     args.Zdiag_arr = args.Zdiag.split(',')
+    if args.n_cores is None:
+        if args.debug_linefit is not None: args.n_cores = 1
+        else: args.n_cores = cpu_count() - 1
 
     return args
 

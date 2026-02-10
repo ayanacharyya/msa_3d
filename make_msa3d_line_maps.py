@@ -4,7 +4,7 @@
     Author : Ayan
     Created: 06-02-26
     Example: run make_msa3d_line_maps.py --do_all_obj
-             run make_msa3d_line_maps.py --id 2145 --plot_line_maps --save_linefit_plot
+             run make_msa3d_line_maps.py --id 2145 --plot_line_maps --save_linefit_plot --n_cores 1
              run make_msa3d_line_maps.py --id 2145 --plot_line_maps --debug_linefit 10,20
 '''
 
@@ -36,13 +36,13 @@ def get_ifu_cube(cube_fits_file):
     return cube, cube_err, wavelengths, wcs
 
 # --------------------------------------------------------------------------------------------------------------------
-def linefit_cube(cube, wavelengths, args, cube_err=None, flam_col='flam', flam_u_col='flam_u', wave_col='rest_wave', label_col='labels', cont_col='cont'):
+def linefit_cube(cube, wavelengths, args, cube_err=None, flam_col='flam', flam_u_col='flam_u', wave_col='rest_wave', label_col='labels', cont_col='cont', n_cores=None):
     '''
     Runs spaxel-by-spaxel emission line fitting of the emission line list provided (as args.line_list)
     Accounts for the corresponding errorcube, if provided
     Returns N x 2D emission line maps, including corresponding uncertainties
     '''
-    img_shape = np.shape(cube)[1:]
+    nx, ny = np.shape(cube)[1:]
     rest_wave_arr = wavelengths / (1 + args.z) # converting to rest-frame wavelength, in Angstrom
 
     # ---------initialising dataframe for lines to fit-----------------
@@ -68,32 +68,35 @@ def linefit_cube(cube, wavelengths, args, cube_err=None, flam_col='flam', flam_u
     fit_results = {}
     params = ['flux', 'flux_err', 'vel', 'vel_err', 'sigma', 'sigma_err']
     for label in df_lines[label_col]:
-        fit_results[label] = {p: np.full(img_shape, np.nan) for p in params}
+        fit_results[label] = {p: np.full((nx, ny), np.nan) for p in params}
 
-    # --------------looping over all spaxels---------------
     start_time3 = datetime.now()
-    for i in range(img_shape[0]):
-        for j in range(img_shape[1]):
-            if args.debug_linefit is not None: i, j = args.debug_linefit
-            if not args.silent: print(f'\t\tFitting spectrum in cell ({(i * img_shape[1] + j + 1)}/{img_shape[0] * img_shape[1]}) ({i},{j})..')
-            flux = cube[:, i, j]
-            if cube_err is None: flux_err = np.zeros(np.shape(flux))
-            else: flux_err = cube_err[:, i, j]
+    # ----------parallelising--------------
+    if args.n_cores > 1:
+        spaxel_indices = [(x, y) for y in range(ny) for x in range(nx)]
+        worker_func = partial(linefit_spaxel, cube=cube, cube_err=cube_err, rest_wave_arr=rest_wave_arr, df_lines=df_lines, line_groups=line_groups, args=args, flam_col=flam_col, flam_u_col=flam_u_col, wave_col=wave_col, label_col=label_col, cont_col=cont_col) # Use partial to fix the arguments that don't change
 
-            # -------initiliasing and filtering spectrum dataframe------------
-            df_spec = pd.DataFrame({wave_col: rest_wave_arr, 
-                                    flam_col: flux.astype(np.float64),
-                                    flam_u_col: flux_err.astype(np.float64),
-                                    })
-            check_cols = [flam_col,flam_u_col]
-            df_spec = df_spec.dropna(subset=check_cols)
-            df_spec = df_spec[np.isfinite(df_spec[check_cols]).all(axis=1)]
-            df_spec = df_spec[df_spec[flam_u_col] > 0]
+        print(f'\t\tStarting fit on {ny*nx} spaxels using {args.n_cores} cores...')
+        
+        with Pool(processes=args.n_cores) as pool:
+            raw_results = pool.map(worker_func, spaxel_indices) # map returns results in the order of spaxel_indices
+            
+        for x, y, res in raw_results:
+            if res is not None:
+                for label, vals in res.items():
+                    for param in params:
+                        fit_results[label][param][x, y] = vals[param]
 
-            # ------------calling line fitter for this spaxel---------------
-            if len(df_spec) > 0:
-                fit_results_spaxel = linefit_spaxel(df_spec, df_lines, line_groups, args, i=i, j=j, flam_col=flam_col, flam_u_col=flam_u_col, wave_col=wave_col, label_col=label_col, cont_col=cont_col)                
-                
+        print(f'\nParallely completed fitting ID {args.id} in {timedelta(seconds=(datetime.now() - start_time3).seconds)}')
+    else:
+    # --------------looping over all spaxels: series---------------
+        for i in range(nx):
+            for j in range(ny):
+                if args.debug_linefit is not None: i, j = args.debug_linefit
+
+                # ------------calling line fitter for this spaxel---------------
+                i, j, fit_results_spaxel = linefit_spaxel((i, j), cube, cube_err, rest_wave_arr, df_lines, line_groups, args, flam_col=flam_col, flam_u_col=flam_u_col, wave_col=wave_col, label_col=label_col, cont_col=cont_col)                
+                    
                 # ---------printing fit results and exiting, for debugging mode---------
                 if args.debug_linefit is not None:
                     print(f'\n\t\tFit results for spaxel ({i},{i}) are:')
@@ -112,12 +115,41 @@ def linefit_cube(cube, wavelengths, args, cube_err=None, flam_col='flam', flam_u
                 for label in df_lines[label_col]:
                     for param in params:
                         fit_results[label][param][i, j] = fit_results_spaxel[label][param]
-            elif not args.silent:
-                print(f'\t\t..no valid spectrum in this cell. Moving on..')
-            
-    print(f'\nCompleted fitting ID {args.id} in {timedelta(seconds=(datetime.now() - start_time3).seconds)}')
+    
+        print(f'\nSerially completed fitting ID {args.id} in {timedelta(seconds=(datetime.now() - start_time3).seconds)}')
 
     return fit_results
+
+# --------------------------------------------------------------------------------------------------------------------
+def linefit_spaxel(coords, cube, cube_err, rest_wave_arr, df_lines, line_groups, args, flam_col='flam', flam_u_col='flam_u', wave_col='rest_wave', label_col='labels', cont_col='cont'):
+    '''
+    Runs emission line fitting on one spectrum (spaxel) of the emission line wavelengths provided (df_lines)
+    Accounts for the corresponding error spectrum, if provided
+    Returns N emission line fluxes, including corresponding uncertainties
+    '''
+    i, j = coords
+    if not args.silent: print(f'\t\tFitting spectrum in cell ({(i * np.shape(cube)[2] + j + 1)}/{np.shape(cube)[1] * np.shape(cube)[2]}) ({i},{j})..')
+    flux = cube[:, i, j]
+    if cube_err is None: flux_err = np.zeros(np.shape(flux))
+    else: flux_err = cube_err[:, i, j]
+
+    # -------initiliasing and filtering spectrum dataframe------------
+    df_spec = pd.DataFrame({wave_col: rest_wave_arr, 
+                            flam_col: flux.astype(np.float64),
+                            flam_u_col: flux_err.astype(np.float64),
+                            })
+    check_cols = [flam_col,flam_u_col]
+    df_spec = df_spec.dropna(subset=check_cols)
+    df_spec = df_spec[np.isfinite(df_spec[check_cols]).all(axis=1)]
+    df_spec = df_spec[df_spec[flam_u_col] > 0]
+
+    # ------------calling line fitter for this spaxel---------------
+    if len(df_spec) > 0:
+        fit_results_spaxel = linefit_spectrum(df_spec, df_lines, line_groups, args, i=i, j=j, flam_col=flam_col, flam_u_col=flam_u_col, wave_col=wave_col, label_col=label_col, cont_col=cont_col)                
+    elif not args.silent:
+        print(f'\t\t..no valid spectrum in this cell. Moving on..')
+
+    return (i, j, fit_results_spaxel)
 
 # --------------------------------------------------------------------------------------------------------------------
 def gaussian(x, amp, mean, sigma):
@@ -149,7 +181,7 @@ def global_gaussian_model(x, *popt, rest_waves=None, tie_vdisp=False):
     return model
 
 # --------------------------------------------------------------------------------------------------------------------
-def linefit_spaxel(df_spec, df_lines, line_groups, args, i='X', j='X', flam_col='flam', flam_u_col='flam_u', wave_col='rest_wave', label_col='labels', cont_col='cont'):
+def linefit_spectrum(df_spec, df_lines, line_groups, args, i='X', j='X', flam_col='flam', flam_u_col='flam_u', wave_col='rest_wave', label_col='labels', cont_col='cont'):
     '''
     Runs emission line fitting on one spectrum (spaxel) of the emission line wavelengths provided (df_lines)
     Accounts for the corresponding error spectrum, if provided

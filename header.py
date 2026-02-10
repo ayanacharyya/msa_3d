@@ -34,6 +34,8 @@ from scipy.optimize import minimize
 from scipy.odr import ODR, Model, RealData
 
 from os import PathLike
+from multiprocessing import Pool, cpu_count
+from functools import partial
 
 from astropy.table import Table, join
 from astropy import units as u
