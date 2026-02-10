@@ -28,7 +28,7 @@ from pathlib import Path
 import pandas as pd
 from importlib import reload
 from scipy.interpolate import interp1d, UnivariateSpline
-from scipy.ndimage import gaussian_filter1d
+from scipy.ndimage import gaussian_filter1d, uniform_filter1d
 from scipy.optimize import curve_fit
 from scipy.optimize import minimize
 from scipy.odr import ODR, Model, RealData
