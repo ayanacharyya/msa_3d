@@ -100,8 +100,16 @@ try:
     from IPython import get_ipython
     ipython = get_ipython()
     if ipython is not None:
-        ipython.run_line_magic('load_ext', 'autoreload')
         ipython.run_line_magic('reload_ext', 'autoreload')
         ipython.run_line_magic('autoreload', '2')
 except Exception:
     pass
+
+# ------------MSA-3D properties hard-coded------------------
+msa_pix_size_arcsec = 0.08 # from end of S 2.4 of Barisic+25
+msa_arcsec_span_x = 1.84 # arcseconds, corresponding to 23 pixels on x-axis
+msa_arcsec_span_y = 2.48 # arcseconds, corresponding to 31 pixels on y-axis
+
+msa_npix_x = int(msa_arcsec_span_x / msa_pix_size_arcsec) # 23
+msa_npix_y = int(msa_arcsec_span_y / msa_pix_size_arcsec) # 31, because the smallest cube in the lot is 23 x 32 pixels
+

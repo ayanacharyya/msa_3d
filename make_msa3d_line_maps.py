@@ -15,6 +15,26 @@ from util import *
 start_time = datetime.now()
 
 # --------------------------------------------------------------------------------------------------------------------
+def read_msa3d_catalog(catalog_file):
+    '''
+    Reads in the redshift catalog of MSA-3D, curtails it to appropriate redshift (for availability of necessary lines)
+    Returns pandas dataframe
+    '''
+    msa_3d_wave_lim = [970, 1820] # NIRSpec G140H/F100LP wavelength range in nm
+    columns = ['id', 'ra', 'dec', 'type', 'redshift', 'mass', 'sfr', 'ssfr', 'Zgrad_kpc', 'Zgrad_kpc_u', 'Zgrad_re', 'Zgrad_re_u', 'num']
+    df = pd.read_csv(catalog_file, delim_whitespace=True, comment='#', names=columns)
+    ndf = len(df)
+
+    # ----------curtail dataframe to relevant redshifts------------
+    hbeta_zlim = get_zrange_for_line('H-beta', obs_wave_range=msa_3d_wave_lim)
+    halpha_zlim = get_zrange_for_line('H-alpha', obs_wave_range=msa_3d_wave_lim)
+    zlim = (hbeta_zlim[0], halpha_zlim[1])
+    df = df[df['redshift'].between(zlim[0], zlim[1])].reset_index(drop=True)
+    print(f'{len(df)} of {ndf} galaxies remain after redshift cut of {zlim[0]:.2f} < z < {zlim[1]:.2f}')
+
+    return df
+
+# --------------------------------------------------------------------------------------------------------------------
 def get_ifu_cube(cube_fits_file):
     '''
     Reads in the IFU datacube from a given filename
@@ -25,6 +45,11 @@ def get_ifu_cube(cube_fits_file):
     hdul = fits.open(cube_fits_file)
     cube = hdul[0].data
     cube_err = hdul[2].data
+
+    # -------chopping to a uniform pixel dimension--------
+    ny, nx = np.shape(cube)[1:]
+    cube = cube[: int(ny/2 - msa_npix_y/2): int(ny/2 + msa_npix_y/2), int(nx/2 - msa_npix_x/2): int(nx/2 + msa_npix_x/2)]
+    cube_err = cube_err[: int(ny/2 - msa_npix_y/2): int(ny/2 + msa_npix_y/2), int(nx/2 - msa_npix_x/2): int(nx/2 + msa_npix_x/2)]
 
     # ----------getting the wavelength array----------
     header = hdul[0].header
@@ -154,7 +179,7 @@ def linefit_spaxel(coords, cube, cube_err, rest_wave_arr, df_lines, line_groups,
     df_spec = pd.DataFrame({wave_col: rest_wave_arr, 
                             flam_col: flux.astype(np.float64),
                             flam_u_col: flux_err.astype(np.float64),
-                            })
+                            }) # typesetting to float64 to avoid big-endian/little-endian problem
     check_cols = [flam_col,flam_u_col]
     df_spec = df_spec.dropna(subset=check_cols)
     df_spec = df_spec[np.isfinite(df_spec[check_cols]).all(axis=1)]
@@ -362,6 +387,48 @@ def plot_linelist(ax, df_lines, fontsize=10, color='cornflowerblue'):
     return ax
 
 # --------------------------------------------------------------------------------------------------------------------
+def get_emission_line_map(line, fit_results, args, log_flux_min=-1.5, log_flux_max=1.5, dered=True):
+    '''
+    Retrieve the emission map for a given line from the given dictionary of emission lines
+    Returns the 2D line map and the corresponding 2D uncertainty map
+    '''
+    # ---------getting the spatillay resolved flux---------------
+    line_map = fit_results[line]['flux']
+    line_map_err = fit_results[line]['flux_err']
+
+    # -------converting flux to flam units--------------
+    conversion_factor = 1.
+    line_map /= conversion_factor # now in ergs/s/cm^2/kpc^2
+    line_map_err /= conversion_factor # now in ergs/s/cm^2/kpc^2
+
+    # --------curtailing to real values only-------------------
+    mask = ~(np.isfinite(line_map))
+    if log_flux_max is not None: mask = mask | (line_map > 10 ** log_flux_max)
+    if log_flux_min is not None: mask = mask | (line_map < 10 ** log_flux_min)
+
+    # ---------getting integrated flux------------
+    ny, nx = np.shape(line_map)
+    integrate_map = line_map[int(ny/2 - args.upto_pix): int(ny/2 + args.upto_pix), int(nx/2 - args.upto_pix): int(nx/2 + args.upto_pix)]
+    integrate_map_err = line_map_err[int(ny/2 - args.upto_pix): int(ny/2 + args.upto_pix), int(nx/2 - args.upto_pix): int(nx/2 + args.upto_pix)]
+    int_flux = np.nansum(integrate_map)
+    int_flux_err = np.sqrt(np.nansum(integrate_map_err ** 2))
+
+    line_int = ufloat(int_flux, int_flux_err)
+
+    # -----------getting the dereddened flux value-----------------
+    if dered and args.EB_V_map is not None:
+        line_wave = rest_wave_dict[line]
+        line_map_quant = get_dereddened_flux(unp.uarray(line_map, line_map_err), line_wave, args.EB_V_map)
+        line_map = unp.nominal_values(line_map_quant)
+        line_map_err = unp.std_devs(line_map_quant)
+
+        line_int = get_dereddened_flux(line_int, line_wave, args.EB_V_int)
+    
+    line_map_obj = np.ma.masked_where(mask, unp.uarray(line_map, line_map_err))
+
+    return line_map_obj, line_int
+
+# --------------------------------------------------------------------------------------------------------------------
 def save_line_maps_fits(fit_results, maps_fits_file, wcs, args):
     '''
     Saves the N x 2D emission line maps as N-extension fits files, along with other relevant header info
@@ -410,9 +477,18 @@ def plot_2D_map(image, ax, label, args, cmap='cividis', clabel='', takelog=True,
     Plots a given 2D image in a given axis
     Returns the axis handle
     '''
-    if takelog: image =  np.log10(image.data)
+    if takelog:
+        if np.ma.isMaskedArray(image):
+            new_mask = image <= 0
+            image[new_mask] = 1e-9 # arbitrary fill value to bypass unumpy's inability to handle math domain errors
+            image = np.ma.masked_where(image.mask | new_mask, np.log10(image.data))
+        else:
+            image =  np.log10(image.data)
 
     p = ax.imshow(image, cmap=cmap, origin='lower', extent=args.extent, vmin=vmin, vmax=vmax)
+    
+    # -----------plotting rectanlge correpsonding to integrated measurent area-------------
+    ax.add_patch(plt.Rectangle((- args.upto_arcsec, - args.upto_arcsec), 2 * args.upto_arcsec, 2 * args.upto_arcsec, lw=0.5, color='r', fill=False))
     
     ax.scatter(0, 0, marker='x', s=10, c='grey')
     ax.set_aspect('equal') 
@@ -438,7 +514,7 @@ def plot_line_flux_maps(fit_results, args):
 
     if args.plot_snr:
         fig_snr, axes_snr = plt.subplots(nrow, ncol, figsize=(8, 6), layout='constrained')
-
+    
     # ----------plot line maps--------------------
     available_lines = list(fit_results.keys())
     for index, fitted_line in enumerate(available_lines):
@@ -446,11 +522,14 @@ def plot_line_flux_maps(fit_results, args):
         col = index % ncol
         
         # ------------extract linemap from fit_results dict--------------
-        fluxmap = fit_results[fitted_line]['flux']
+        line_map, _  = get_emission_line_map(fitted_line, fit_results, args, log_flux_min=None, log_flux_max=None, dered=True)
+        fluxmap = unp.nominal_values(line_map.data)
+
+        # ------------plot linemap--------------
         axes[row, col] = plot_2D_map(fluxmap, axes[row, col], f'{available_lines[index]}', args, cmap=cmap, takelog=show_log, vmin=cmin, vmax=cmax, hide_xaxis=row < nrow - 1, hide_yaxis=col > 0)
 
         if args.plot_snr:
-            errmap = fit_results[fitted_line]['flux_err']
+            errmap = unp.std_devs(line_map.data)
             snrmap = fluxmap / errmap
             axes_snr[row, col] = plot_2D_map(snrmap, axes_snr[row, col], f'{available_lines[index]}: SNR', args, cmap=cmap, takelog=False, vmin=cmin_snr, vmax=cmax_snr, hide_xaxis=row < nrow - 1, hide_yaxis=col > 0)
 
@@ -541,9 +620,9 @@ def read_line_maps_fits(filename):
             continue
             
         # Split the EXTNAME into the line label and the parameter suffix
-        parts = extname.rsplit('_', 1)
+        parts = extname.rsplit('_', 3) # any number greater than 1 (say, 3) because we know there can be more than one "_" in the name
         label = parts[0]
-        suffix = parts[1]
+        suffix = '_'.join(parts[1:])
         
         if suffix not in suffix_to_key:
             continue
@@ -552,7 +631,12 @@ def read_line_maps_fits(filename):
             fit_results[label] = {}
         
         dict_key = suffix_to_key[suffix]
-        fit_results[label][dict_key] = hdul[i].data.copy()
+        data = hdul[i].data.copy()
+        
+        # -------chopping to a uniform pixel dimension--------
+        ny, nx = np.shape(data)
+        data = data[int(ny/2 - msa_npix_y/2): int(ny/2 + msa_npix_y/2), int(nx/2 - msa_npix_x/2): int(nx/2 + msa_npix_x/2)]
+        fit_results[label][dict_key] = data
 
     return fit_results, spatial_header
 
@@ -563,12 +647,6 @@ if __name__ == "__main__":
     args.fontfactor = 1.2
     args.id_arr = args.id
     
-    # ------------MSA-3D properties hard-coded------------------
-    msa_3d_wave_lim = [970, 1820] # NIRSpec G140H/F100LP wavelength range in nm
-    args.arcsec_limit_x = 1.8 # arcseconds
-    args.arcsec_limit_y = 3.0 # arcseconds
-    args.extent = (-args.arcsec_limit_x/2, args.arcsec_limit_x/2, -args.arcsec_limit_y/2, args.arcsec_limit_y/2)
-
     # -------------setup directories and global variables----------------
     cube_fits_dir = args.input_dir / 'cubes'
     maps_fits_dir = args.output_dir / 'maps'
@@ -577,17 +655,7 @@ if __name__ == "__main__":
     catalog_file = args.input_dir / 'redshifts.dat'
 
     # ----------------reading in catalog---------------------
-    columns = ['id', 'ra', 'dec', 'type', 'redshift', 'mass', 'sfr', 'ssfr', 'Zgrad_kpc', 'Zgrad_kpc_u', 'Zgrad_re', 'Zgrad_re_u', 'num']
-    df = pd.read_csv(catalog_file, delim_whitespace=True, comment='#', names=columns)
-    ndf = len(df)
-
-    # ----------curtail dataframe to relevant redshifts------------
-    hbeta_zlim = get_zrange_for_line('H-beta', obs_wave_range=msa_3d_wave_lim)
-    halpha_zlim = get_zrange_for_line('H-alpha', obs_wave_range=msa_3d_wave_lim)
-    zlim = (hbeta_zlim[0], halpha_zlim[1])
-    df = df[df['redshift'].between(zlim[0], zlim[1])].reset_index(drop=True)
-    print(f'{len(df)} of {ndf} galaxies remain after redshift cut of {zlim[0]:.2f} < z < {zlim[1]:.2f}')
-
+    df = read_msa3d_catalog(catalog_file)
     if not args.do_all_obj: df = df[df['id'].isin(args.id_arr)]
 
     # ----------------looping over the objects in this chunk-------------
@@ -596,6 +664,8 @@ if __name__ == "__main__":
         print(f'Commencing ({index + 1}/{len(df)}) ID {obj["id"]}..')
         args.id =obj['id']
         args.z = obj['redshift']
+        args.upto_arcsec = args.upto_kpc * cosmo.arcsec_per_kpc_proper(args.z).value # arcsec
+        args.upto_pix = args.upto_arcsec / msa_pix_size_arcsec
 
         # ------determining directories and filenames---------
         args.cube_fits_file = cube_fits_dir / f'cube_square_medians_{args.id:d}_hdr_rect_err.fits'
@@ -617,8 +687,14 @@ if __name__ == "__main__":
             fit_results, spatial_header = read_line_maps_fits(args.maps_fits_file)
         
         # --------plot the emission line maps-------------
-        if args.plot_flux_maps: fig = plot_line_flux_maps(fit_results, args)
-        if args.plot_line_maps: fig = plot_line_maps(fit_results, 'H-alpha', args)
+        if args.plot_flux_maps:
+            fig = plot_line_flux_maps(fit_results, args)
+        if args.plot_line_maps:
+            line = 'H-alpha'
+            if line in list(fit_results.keys()):
+                fig = plot_line_maps(fit_results, line, args)
+            else:
+                print(f'{line} is not available for object {args.id}')
 
         print(f'\nCompleted ID {args.id} in {timedelta(seconds=(datetime.now() - start_time2).seconds)}, {len(df) - index - 1} to go!')
 

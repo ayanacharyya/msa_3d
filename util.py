@@ -68,27 +68,28 @@ def parse_args():
     parser.add_argument('--plot_snr', dest='plot_snr', action='store_true', default=False, help='Plot the SNR map for a given galaxy? Default is no.')
 
     # ------- args added for make_metallicity_sfr_maps.py ------------------------------
+    parser.add_argument('--upto_kpc', metavar='upto_kpc', type=float, action='store', default=5, help='Radius in kpc within which integrated quantitites would be measured, and radial fits would be performed; default is 5')
     parser.add_argument('--plot_ionisation_parameter', dest='plot_ionisation_parameter', action='store_true', default=False, help='Plot the plot_ionisation_parameter map along with metallicity? Default is no.')
     parser.add_argument('--plot_DIG', dest='plot_DIG', action='store_true', default=False, help='Plot DIG diagnostics? Default is no.')
-    parser.add_argument('--plot_BPT', dest='plot_BPT', action='store_true', default=False, help='Plot BPT? Default is no.')
     parser.add_argument('--plot_radial_profiles', dest='plot_radial_profiles', action='store_true', default=False, help='Plot radial profiles corresponding to the 2D maps? Default is no.')
 
-    parser.add_argument('--plot_metallicity', dest='plot_metallicity', action='store_true', default=False, help='Plot the metallicity map instead of the full diagnostic figure? Default is no.')
-    parser.add_argument('--Zbranch', metavar='Zbranch', type=str, action='store', default='low', help='Which R23 branch to be used (choose between high/low)? Default is low')
+    parser.add_argument('--use_original_NB_grid', dest='use_original_NB_grid', action='store_true', default=False, help='Use the original, unmodified NebulaBayes grid? Default is no.')
+    parser.add_argument('--plot_metallicity', dest='plot_metallicity', action='store_true', default=False, help='Plot the metallicity map? Default is no.')
+    parser.add_argument('--plot_met_sfr', dest='plot_met_sfr', action='store_true', default=False, help='Plot the metallicity and SFR maps? Default is no.')
     parser.add_argument('--Zdiag', metavar='Zdiag', type=str, action='store', default='KD02_R23', help='Which metallicity diagnostic to use (choose between KD02_R23,R23,R3,O3S2,O3O2,S2,R2,RS32,Te,P25,NB? Default is KD02_R23')
+    parser.add_argument('--Zbranch', metavar='Zbranch', type=str, action='store', default='low', help='Which R23 branch to be used (choose between high/low)? Default is low')
+    parser.add_argument('--use_C25', dest='use_C25', action='store_true', default=False, help='Use the Cataldi+2025 calibrations rather than Curti+2020? Default is no.')
     parser.add_argument('--debug_Zdiag', dest='debug_Zdiag', action='store_true', default=False, help='Make additional plots to debug the metallicity diagnostic implementation? Default is no.')
     parser.add_argument('--ignore_combined_method', dest='ignore_combined_method', action='store_true', default=False, help='Ignore the combined method (S6 of KD02) while computing R23 metallicity and rely solely on R23? Default is no.')
     parser.add_argument('--exclude_lines', metavar='exclude_lines', type=str, action='store', default='', help='Which lines to be excluded for metallicity measurement with NB? Default is empty string, i.e., use all available lines')
     parser.add_argument('--dered_in_NB', dest='dered_in_NB', action='store_true', default=False, help='Make NebulaBayes de-redden the lines? Default is no (i.e., do de-reddening separately before calling NB)')
-    parser.add_argument('--use_C25', dest='use_C25', action='store_true', default=False, help='Use the Cataldi+2025 calibrations rather than Curti+2020? Default is no.')
 
+    parser.add_argument('--plot_BPT', dest='plot_BPT', action='store_true', default=False, help='Plot BPT? Default is no.')
     parser.add_argument('--plot_AGN_frac', dest='plot_AGN_frac', action='store_true', default=False, help='Plot AGN fraction 2D map (based on BPT diagram)? Default is no.')
     parser.add_argument('--AGN_diag', metavar='AGN_diag', type=str, action='store', default='None', help='Which AGN-SF BPT-like diagnostic to use (choose between VO87,H21,O2O3,O2Hb,Ne3O2? Default is None')
     parser.add_argument('--mask_agn', dest='mask_agn', action='store_true', default=False, help='Mask out the AGN-dominated pixels from all metallicity estimates? Default is no.')
 
     parser.add_argument('--debug_Zsfr', dest='debug_Zsfr', action='store_true', default=False, help='Debug the metallicity-sfr plots? Default is no.')
-    parser.add_argument('--histbycol', metavar='histbycol', type=str, action='store', default=None, help='Column name whose average per bin would be shown on line ratio histogram y-axis; Default is None, i.e., the usual counts will be on histogram y-axis')
-    parser.add_argument('--clobber_mcmc', dest='clobber_mcmc', action='store_true', default=False, help='Over-write existing MCMC file? Default is no.')
     parser.add_argument('--fit_correlation', dest='fit_correlation', action='store_true', default=False, help='Fit a slope between x and y? Default is no.')
 
     # ------- wrap up and processing args ------------------------------
@@ -126,6 +127,8 @@ def parse_args():
     if args.n_cores is None:
         if args.debug_linefit is not None: args.n_cores = 1
         else: args.n_cores = cpu_count() - 1
+
+    args.extent = (-msa_arcsec_span_x/2, msa_arcsec_span_x/2, -msa_arcsec_span_y/2, msa_arcsec_span_y/2)
 
     return args
 
@@ -535,3 +538,111 @@ def make_colorbar_top(fig, axes, clabel, cmap, cmin, cmax, ncbins, fontsize, asp
     cbar.update_ticks()
 
     return fig
+
+# --------------------------------------------------------------------------------------------------------------------
+def take_safe_log_ratio(num_map, den_map, skip_log=False):
+    '''
+    Takes the log of ratio of two 2D masked arrays by properly accounting for bad values so as to avoid math errors
+    Returns 2D masked array
+    '''
+    if np.ma.isMaskedArray(num_map):
+        net_mask = num_map.mask | den_map.mask
+        num_map = num_map.data
+        den_map = den_map.data
+    else:
+        net_mask = False
+
+    bad_mask = (unp.nominal_values(num_map) <= 0) | (unp.nominal_values(den_map) <= 0) | (~np.isfinite(unp.nominal_values(num_map))) | (~np.isfinite(unp.nominal_values(den_map))) | (~np.isfinite(unp.std_devs(num_map))) | (~np.isfinite(unp.std_devs(den_map)))
+    num_map[bad_mask] = 1e-9  # arbitrary fill value to bypass unumpy's inability to handle math domain errors
+    den_map[bad_mask] = 1e-9  # arbitrary fill value to bypass unumpy's inability to handle math domain errors
+    ratio_map = num_map / den_map
+    if not skip_log: ratio_map = unp.log10(ratio_map)
+    ratio_map[bad_mask | net_mask] = -99.
+    ratio_map = np.ma.masked_where(bad_mask | net_mask, ratio_map)
+
+    return ratio_map
+
+# --------------------------------------------------------------------------------------------------------------------
+def take_safe_log_sum(map1, map2, skip_log=False):
+    '''
+    Takes the log of the sum of two 2D masked arrays by properly accounting for bad values so as to avoid math errors
+    Returns 2D masked array
+    '''
+    if np.ma.isMaskedArray(map1):
+        net_mask = map1.mask | map2.mask
+        map1 = map1.data
+        map2 = map2.data
+    else:
+        net_mask = False
+
+    bad_mask = (unp.nominal_values(map1) <= 0) | (unp.nominal_values(map2) <= 0) | (~np.isfinite(unp.nominal_values(map1))) | (~np.isfinite(unp.nominal_values(map2))) | (~np.isfinite(unp.std_devs(map1))) | (~np.isfinite(unp.std_devs(map2)))
+    map1[bad_mask] = 1e-9  # arbitrary fill value to bypass unumpy's inability to handle math domain errors
+    map2[bad_mask] = 1e-9  # arbitrary fill value to bypass unumpy's inability to handle math domain errors
+    sum_map = map1 + map2
+    if not skip_log: sum_map = unp.log10(sum_map)
+    sum_map[bad_mask | net_mask] = -99.
+    sum_map = np.ma.masked_where(bad_mask | net_mask, sum_map)
+
+    return sum_map
+
+# --------------------------------------------------------------------------------------------------------------------
+def get_kappa(x, i):
+    '''
+    To calculate kappa according to Clayton, Cardelli & Mathis 1989 dust law
+    From ayan_codes/mage_project/ayan/mage.py
+    '''
+    Rv = 3.1  # Clayton Cardelli Mathis 1989
+    x = np.array(x)
+    if i == 1:
+        a = 0.574 * x ** 1.61
+        b = -0.527 * x ** 1.61
+    elif i == 2:
+        y = x - 1.82
+        a = 1 + 0.17699 * y - 0.50447 * y ** 2 - 0.02427 * y ** 3 + 0.72085 * y ** 4 + 0.01979 * y ** 5 - 0.77530 * y ** 6 + 0.32999 * y ** 7
+        b = 1.41338 * y + 2.28305 * y ** 2 + 1.07233 * y ** 3 - 5.38434 * y ** 4 - 0.62251 * y ** 5 + 5.30260 * y ** 6 - 2.09002 * y ** 7
+    elif i == 3:
+        a = 1.752 - 0.316 * x - 0.104 / ((x - 4.67) ** 2 + 0.341)
+        b = -3.090 + 1.825 * x + 1.206 / ((x - 4.62) ** 2 + 0.263)
+    elif i == 4:
+        a = 1.752 - 0.316 * x - 0.104 / ((x - 4.67) ** 2 + 0.341) - 0.04473 * (x - 5.9) ** 2 - 0.009779 * (x - 5.9) ** 3
+        b = -3.090 + 1.825 * x + 1.206 / ((x - 4.62) ** 2 + 0.263) + 0.2130 * (x - 5.9) ** 2 - 0.1207 * (x - 5.9) ** 3
+    elif i == 5:
+        a = -1.073 - 0.628 * (x - 8) + 0.137 * (x - 8) ** 2 - 0.070 * (x - 8) ** 3
+        b = 13.670 + 4.257 * (x - 8) - 0.420 * (x - 8) ** 2 + 0.374 * (x - 8) ** 3
+    return a * Rv + b
+
+def get_full_kappa(wave, inAngstrom=True):
+    '''
+    To calculate kappa for a rang eof wavelengths, according to CCM89 dust law
+    From ayan_codes/mage_project/ayan/mage.py
+    '''
+    flag = 0
+    if type(wave) in [float, int, np.float64]:
+        wave = [float(wave)]
+        flag = 1
+    wave = np.array(wave)
+    if inAngstrom: wave /= 1e4  # to convert to micron
+    x = 1. / wave
+    k = np.zeros(len(x))
+    k += get_kappa(x, 1) * ((x >= 0.3) & (x <= 1.1))
+    k += get_kappa(x, 2) * ((x > 1.1) & (x <= 3.3))
+    k += get_kappa(x, 3) * ((x > 3.3) & (x < 5.9))
+    k += get_kappa(x, 4) * ((x >= 5.9) & (x <= 8.))
+    k += get_kappa(x, 5) * ((x >= 8.) & (x <= 10.))
+    if flag: k = k[0]  # if a single wavelength was input as a float, output a float (not array)
+    return k
+
+def get_dereddened_flux(obs_flux_map, wavelength, EB_V, inAngstrom=True):
+    '''
+    Calculates and returns dereddened fluxes
+    Does not deal with uncertainties, for now
+    From ayan_codes/mage_project/ayan/mage.py
+    '''
+    if EB_V is None: EB_V = np.zeros(np.shape(obs_flux_map))
+    kappa = get_full_kappa(wavelength, inAngstrom=inAngstrom)
+    A_map = kappa * EB_V
+    flux_corrected_map = obs_flux_map * 10 ** (0.4 * A_map)
+
+    return flux_corrected_map
+# --------------------------------------------------------------------------------------------------------------------
+
