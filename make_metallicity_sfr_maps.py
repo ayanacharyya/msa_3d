@@ -33,13 +33,13 @@ def compute_EB_V(Ha_flux, Hb_flux,verbose=False):
 
     if hasattr(Hb_flux, "__len__"): # if it is an array
         # --------computing the ratio and appropriate errors------------
-        new_mask = Hb_flux == 0
+        new_mask = unp.nominal_values(Hb_flux) == 0
         Hb_flux[new_mask] = -1 # arbitrary fill value to bypass unumpy's inability to handle math domain errors
         obs_ratio = Ha_flux / Hb_flux
         obs_ratio = np.ma.masked_where(new_mask, obs_ratio)
 
         # --------computing the log of the ratio and appropriate errors------------
-        new_mask = obs_ratio <= 0
+        new_mask = unp.nominal_values(obs_ratio.data) <= 0
         obs_ratio[new_mask] = 1e-9 # arbitrary fill value to bypass unumpy's inability to handle math domain errors
         EB_V = 1.97 * unp.log10(obs_ratio.data / theoretical_ratio)
         EB_V[obs_ratio.data < theoretical_ratio] = 0
@@ -427,9 +427,14 @@ def compute_Z_NB(line_label_array, line_waves_array, line_flux_array, args):
     Calculates and returns the NebulaBayes metallicity given a list of observed line fluxes
     '''
     line_flux_array = [np.atleast_1d(item) for item in line_flux_array]
-    npixels = len(line_flux_array[0])
+    
+    map_shape = np.shape(line_flux_array)[1:]
+    if len(map_shape) == 1: npixels = map_shape[0]
+    else: npixels = map_shape[0] * map_shape[1]
+
     IDs_array = np.arange(npixels).flatten()
     unique_IDs_array = np.unique(IDs_array)
+    
     print(f'\nAbout to start running NB, with {len(line_label_array)} lines: {line_label_array}..\n')
     if len(unique_IDs_array) > 60: print(f'This might take ~{int(len(unique_IDs_array) / 60)} min')
 
@@ -463,13 +468,13 @@ def compute_Z_NB(line_label_array, line_waves_array, line_flux_array, args):
     counter = 0
     start_time3 = datetime.now()
 
-    for index in range(len(obs_flux_array[0])):
+    for index in range(npixels):
         this_ID = IDs_array[index]
         if net_mask_array[index]: # no need to calculate for those pixels that are already masked
-            #print(f'Skipping NB for masked pixel {index + 1} out of {len(obs_flux_array[0])}..')
+            print(f'Skipping NB for masked pixel {this_ID} ({index + 1}/{npixels})..')
             logOH = ufloat(np.nan, np.nan)
         elif this_ID in logOH_dict_unique_IDs.keys():
-            #print(f'Skipping NB due to existing measurement from unique ID {this_ID} for pixel {index + 1} out of {len(obs_flux_array[0])}..')
+            print(f'Skipping NB due to existing measurement from unique ID {this_ID} ({index + 1}/{npixels})..')
             logOH = logOH_dict_unique_IDs[this_ID]
         else:
             start_time4 = datetime.now()
@@ -502,7 +507,7 @@ def compute_Z_NB(line_label_array, line_waves_array, line_flux_array, args):
                         }
 
                 # -------running NB--------------
-                print(f'Deb1576: binID {this_ID}: nlines={len(obs_fluxes)}, {dict(zip(line_labels, obs_fluxes))}, norm_line = {norm_line}, dereddening on the fly? {dered}') ##
+                print(f'Deb1576: binID {this_ID} ({index + 1}/{npixels}): nlines={len(obs_fluxes)}, {dict(zip(line_labels, obs_fluxes))}, norm_line = {norm_line}, dereddening on the fly? {dered}') ##
                 Result = NB_Model_HII(obs_fluxes, obs_errs, line_labels, **kwargs)
 
                 # -------estimating the resulting logOH, and associated uncertainty-----------
@@ -536,10 +541,8 @@ def get_Z_NB(fit_results, args):
     statistics, using NebulaBayes
     '''
     # -----dict for converting line label names to those acceptable to NB---------
-    if args.use_original_NB_grid: line_label_dict = {'H-beta':'Hbeta', 'OIII-5007':'OIII5007', 'OIII-4363':'OIII4363', 'OI-6302':'OI6300', \
-                       'H-alpha':'Halpha', 'NII-6584':'NII6583', 'SII-6717':'SII6716', 'SII-6730':'SII6731'}
-    else: line_label_dict = {'H-beta':'Hbeta', 'OIII-5007':'OIII5007', 'OIII-4363':'OIII4363', 'OI-6302':'OI6300', \
-                       'H-alpha':'Halpha', 'NII-6584':'NII6583', 'SII-6717':'SII6716', 'SII-6730':'SII6731'}
+    if args.use_original_NB_grid: line_label_dict = {'H-beta':'Hbeta', 'OIII-5007':'OIII5007', 'OIII-4363':'OIII4363', 'H-alpha':'Halpha', 'NII-6584':'NII6583', 'SII-6717':'SII6716', 'SII-6730':'SII6731'}
+    else: line_label_dict = {'H-beta':'Hbeta', 'OIII-5007':'OIII5007', 'OIII-4363':'OIII4363', 'H-alpha':'Halpha', 'NII-6584':'NII6583', 'SII-6717':'SII6716', 'SII-6730':'SII6731'}
 
     line_map_array, line_int_array, line_label_array, line_waves_array = [], [], [], []
     for line in args.available_lines:
@@ -649,7 +652,7 @@ def plot_quant_map(ax, quant, quant_maps, args, cmap='cividis', clabel='', takel
     '''
     quant_map, _, quant_int, quant_mask = get_quant_from_quant_maps(quant, quant_maps)
     quant_masked = np.ma.masked_where(quant_mask, quant_map)
-    ax = plot_2D_map(quant_masked, ax, f'{quant}: {quant_int}', args, cmap=cmap, clabel=clabel, takelog=takelog, vmin=vmin, vmax=vmax, hide_xaxis=hide_xaxis, hide_yaxis=hide_yaxis, hide_cbar=hide_cbar, hide_cbar_ticks=hide_cbar_ticks, cticks_integer=cticks_integer)
+    ax = plot_2D_map(quant_masked, ax, f'{quant}: {quant_int:.2f}', args, cmap=cmap, clabel=clabel, takelog=takelog, vmin=vmin, vmax=vmax, hide_xaxis=hide_xaxis, hide_yaxis=hide_yaxis, hide_cbar=hide_cbar, hide_cbar_ticks=hide_cbar_ticks, cticks_integer=cticks_integer)
 
     return ax
 
@@ -696,7 +699,7 @@ def plot_met_sfr_corr(ax, quant_maps, args, color='salmon', colorby=None, cmap='
     else: color = df[colorby]
 
     p = ax.scatter(df['log_sfr'], df['logOH'], s=10, lw=1, ec='k', color=color)
-    ax.errorbar(df['log_sfr'], df['logOH'], xerr=df['log_sfr_u'], yerr=df['logOH_u'], c=color, fmt='none', lw=0.5)
+    ax.errorbar(df['log_sfr'], df['logOH'], xerr=df['log_sfr_u'], yerr=df['logOH_u'], c=color, fmt='none', lw=0.5, alpha=0.7, zorder=-5)
 
     # -----------------annotating axes---------------------
     ax.set_xlim(log_sfr_min, log_sfr_max)
@@ -812,8 +815,8 @@ if __name__ == "__main__":
     args.fontfactor = 1.2
     args.id_arr = args.id
 
-    logOH_min, logOH_max = 7.0, 8.0
-    #logOH_min, logOH_max = None, None
+    #logOH_min, logOH_max = 7.0, 8.0
+    logOH_min, logOH_max = None, None
     log_sfr_min, log_sfr_max = 16, 21
     #log_sfr_min, log_sfr_max = None, None
     
@@ -827,7 +830,7 @@ if __name__ == "__main__":
 
     # ----------------reading in catalog---------------------
     df = read_msa3d_catalog(catalog_file)
-    if not args.do_all_obj: df = df[df['id'].isin(args.id_arr)]
+    if not args.do_all_obj: df = df[df['id'].isin(args.id_arr)].reset_index(drop=True)
 
     # ----------------looping over the objects in this chunk-------------
     for index, obj in df.iterrows():
@@ -849,9 +852,16 @@ if __name__ == "__main__":
             fit_results, spatial_header = read_line_maps_fits(args.maps_fits_file)
             wcs = pywcs.WCS(spatial_header)
 
+            args.available_lines = list(fit_results.keys())
+            if 'H-alpha' not in args.available_lines:
+                print(f'ID {args.id} (z={args.z:.2f}) does not have H-alpha, so skipping it..')
+                continue
+            if 'H-beta' not in args.available_lines:
+                print(f'ID {args.id} (z={args.z:.2f}) does not have H-beta, so skipping it..')
+                continue
+
             EB_V_map, args.EB_V_int = get_EB_V(fit_results, args)
             args.EB_V_map = EB_V_map.data
-            args.available_lines = list(fit_results.keys())
 
             # -----------computing various quantities--------------
             quant_maps = compute_quant_maps(fit_results, args)

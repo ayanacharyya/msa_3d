@@ -7,6 +7,7 @@
              run make_msa3d_line_maps.py --id 2145 --plot_flux_maps --save_linefit_plot --n_cores 4
              run make_msa3d_line_maps.py --id 2145 --plot_line_maps
              run make_msa3d_line_maps.py --id 2145 --debug_linefit 22,12
+             run make_msa3d_line_maps.py --do_all_obj --save_linefit_plot --plot_flux_maps --plot_line_maps --n_cores 6
 '''
 
 from header import *
@@ -48,8 +49,8 @@ def get_ifu_cube(cube_fits_file):
 
     # -------chopping to a uniform pixel dimension--------
     ny, nx = np.shape(cube)[1:]
-    cube = cube[: int(ny/2 - msa_npix_y/2): int(ny/2 + msa_npix_y/2), int(nx/2 - msa_npix_x/2): int(nx/2 + msa_npix_x/2)]
-    cube_err = cube_err[: int(ny/2 - msa_npix_y/2): int(ny/2 + msa_npix_y/2), int(nx/2 - msa_npix_x/2): int(nx/2 + msa_npix_x/2)]
+    cube = cube[:, int(ny/2 - msa_npix_y/2): int(ny/2 + msa_npix_y/2), int(nx/2 - msa_npix_x/2): int(nx/2 + msa_npix_x/2)]
+    cube_err = cube_err[:, int(ny/2 - msa_npix_y/2): int(ny/2 + msa_npix_y/2), int(nx/2 - msa_npix_x/2): int(nx/2 + msa_npix_x/2)]
 
     # ----------getting the wavelength array----------
     header = hdul[0].header
