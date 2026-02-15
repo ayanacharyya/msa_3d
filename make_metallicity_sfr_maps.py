@@ -43,8 +43,11 @@ def compute_EB_V(Ha_flux, Hb_flux,verbose=False):
         obs_ratio[new_mask] = 1e-9 # arbitrary fill value to bypass unumpy's inability to handle math domain errors
         EB_V = 1.97 * unp.log10(obs_ratio.data / theoretical_ratio)
         EB_V[obs_ratio.data < theoretical_ratio] = 0
-        EB_V = np.ma.masked_where(new_mask | obs_ratio.mask | net_mask, EB_V)
-
+        
+        #EB_V_limit_mask = unp.nominal_values(EB_V) < 5.0
+        net_mask  = net_mask | new_mask | obs_ratio.mask #| EB_V_limit_mask
+        EB_V = unp.uarray(np.where(net_mask, unp.nominal_values(net_mask), np.nan), np.where(net_mask, unp.std_devs(net_mask), np.nan))
+    
     else: # if it is scalar
         try:
             obs_ratio = Ha_flux / Hb_flux
@@ -748,8 +751,8 @@ def save_quant_maps_fits(quant_maps, quants_fits_file, wcs, args):
         hdu.header['BUNIT'] = params_dict[label]['unit']
         if 'int' in quant_data:
             quant_int = quant_data['int']
-            if np.isnan(quant_int): hdu.header[f'INT_{params_dict[label]["label"]}'] = 'NAN'
-            else: hdu.header[f'INT_{params_dict[label]["label"]}'] = quant_int
+            if np.isfinite(quant_int): hdu.header[f'INT_{params_dict[label]["label"]}'] = quant_int
+            else: hdu.header[f'INT_{params_dict[label]["label"]}'] = 'NAN'
         hdul.append(hdu)
 
     hdul.writeto(quants_fits_file, overwrite=True)
@@ -846,51 +849,55 @@ if __name__ == "__main__":
         args.maps_fits_file = maps_fits_dir / f'{args.id:05d}.maps.fits'
         args.quants_fits_file = quants_fits_dir / f'{args.id:05d}_Zdiag_{args.Zdiag}.quants.fits'
 
-        # ---------measuring the various quantitites--------
-        if not os.path.exists(args.quants_fits_file) or args.clobber:
-            # -----------read in the emission line maps--------------
-            fit_results, spatial_header = read_line_maps_fits(args.maps_fits_file)
-            wcs = pywcs.WCS(spatial_header)
+        try:
+            # ---------measuring the various quantitites--------
+            if not os.path.exists(args.quants_fits_file) or args.clobber:
+                # -----------read in the emission line maps--------------
+                fit_results, spatial_header = read_line_maps_fits(args.maps_fits_file)
+                wcs = pywcs.WCS(spatial_header)
 
-            args.available_lines = list(fit_results.keys())
-            if 'H-alpha' not in args.available_lines:
-                print(f'ID {args.id} (z={args.z:.2f}) does not have H-alpha, so skipping it..')
-                continue
-            if 'H-beta' not in args.available_lines:
-                print(f'ID {args.id} (z={args.z:.2f}) does not have H-beta, so skipping it..')
-                continue
+                args.available_lines = list(fit_results.keys())
+                if 'H-alpha' not in args.available_lines:
+                    print(f'ID {args.id} (z={args.z:.2f}) does not have H-alpha, so skipping it..')
+                    continue
+                if 'H-beta' not in args.available_lines:
+                    print(f'ID {args.id} (z={args.z:.2f}) does not have H-beta, so skipping it..')
+                    continue
 
-            EB_V_map, args.EB_V_int = get_EB_V(fit_results, args)
-            args.EB_V_map = EB_V_map.data
+                args.EB_V_map, args.EB_V_int = get_EB_V(fit_results, args)
 
-            # -----------computing various quantities--------------
-            quant_maps = compute_quant_maps(fit_results, args)
+                # -----------computing various quantities--------------
+                quant_maps = compute_quant_maps(fit_results, args)
 
-            # -----------save the quanttity maps in fits file-------------
-            save_quant_maps_fits(quant_maps, args.quants_fits_file, wcs, args)
-        else:
-            quant_maps, spatial_header = read_quant_maps_fits(args.quants_fits_file)
+                # -----------save the quanttity maps in fits file-------------
+                save_quant_maps_fits(quant_maps, args.quants_fits_file, wcs, args)
+            else:
+                quant_maps, spatial_header = read_quant_maps_fits(args.quants_fits_file)
+            
+            # --------plot the qunatity maps-------------
+            if args.plot_metallicity:
+                fig, ax = plt.subplots(1, figsize=(8, 8), layout='constrained')
+                
+                ax = plot_quant_map(ax, 'logOH', quant_maps, args, cmap='cividis', takelog=False, vmin=logOH_min, vmax=logOH_max, hide_cbar=False)
+                
+                fig.text(0.1, 0.98, f'ID {args.id}', fontsize=args.fontsize, c='k', ha='left', va='top')
+                save_fig(fig, args.fig_dir, f'{args.id}_metallicity_{args.Zdiag}_maps.png', args)    
+
+            if args.plot_met_sfr:
+                fig, axes = plt.subplots(1, 3, figsize=(10, 4.5))
+                fig.subplots_adjust(left=0.06, right=0.98, bottom=0.12, top=0.9, wspace=0.5)
+                
+                axes[0] = plot_quant_map(axes[0], 'logOH', quant_maps, args, cmap='cividis', takelog=False, vmin=logOH_min, vmax=logOH_max, hide_cbar=False)
+                axes[1] = plot_quant_map(axes[1], 'sfr', quant_maps, args, cmap='Blues', takelog=True, vmin=log_sfr_min, vmax=log_sfr_max, hide_yaxis=True, hide_cbar=False)
+                axes[2] = plot_met_sfr_corr(axes[2], quant_maps, args, color='salmon', log_sfr_min=log_sfr_min, log_sfr_max=log_sfr_max, logOH_min=logOH_min, logOH_max=logOH_max)
+                
+                fig.text(0.05, 0.95, f'ID {args.id}', fontsize=args.fontsize, c='k', ha='left', va='top')
+                save_fig(fig, args.fig_dir, f'{args.id}_metallicity_{args.Zdiag}_SFR_corr.png', args)    
+
+            print(f'\nCompleted ID {args.id} in {timedelta(seconds=(datetime.now() - start_time2).seconds)}, {len(df) - index - 1} to go!')
         
-        # --------plot the qunatity maps-------------
-        if args.plot_metallicity:
-            fig, ax = plt.subplots(1, figsize=(8, 8), layout='constrained')
-            
-            ax = plot_quant_map(ax, 'logOH', quant_maps, args, cmap='cividis', takelog=False, vmin=logOH_min, vmax=logOH_max, hide_cbar=False)
-            
-            fig.text(0.1, 0.98, f'ID {args.id}', fontsize=args.fontsize, c='k', ha='left', va='top')
-            save_fig(fig, args.fig_dir, f'{args.id}_metallicity_{args.Zdiag}_maps.png', args)    
-
-        if args.plot_met_sfr:
-            fig, axes = plt.subplots(1, 3, figsize=(10, 4.5))
-            fig.subplots_adjust(left=0.06, right=0.98, bottom=0.12, top=0.9, wspace=0.5)
-            
-            axes[0] = plot_quant_map(axes[0], 'logOH', quant_maps, args, cmap='cividis', takelog=False, vmin=logOH_min, vmax=logOH_max, hide_cbar=False)
-            axes[1] = plot_quant_map(axes[1], 'sfr', quant_maps, args, cmap='Blues', takelog=True, vmin=log_sfr_min, vmax=log_sfr_max, hide_yaxis=True, hide_cbar=False)
-            axes[2] = plot_met_sfr_corr(axes[2], quant_maps, args, color='salmon', log_sfr_min=log_sfr_min, log_sfr_max=log_sfr_max, logOH_min=logOH_min, logOH_max=logOH_max)
-            
-            fig.text(0.05, 0.95, f'ID {args.id}', fontsize=args.fontsize, c='k', ha='left', va='top')
-            save_fig(fig, args.fig_dir, f'{args.id}_metallicity_{args.Zdiag}_SFR_corr.png', args)    
-
-        print(f'\nCompleted ID {args.id} in {timedelta(seconds=(datetime.now() - start_time2).seconds)}, {len(df) - index - 1} to go!')
-
+        except Exception as e:
+            print(f'Could not make plots for ID {args.id} because {e}')
+            pass
+ 
     print(f'Completed in {timedelta(seconds=(datetime.now() - start_time).seconds)}')

@@ -396,6 +396,7 @@ def get_emission_line_map(line, fit_results, args, log_flux_min=-1.5, log_flux_m
     # ---------getting the spatillay resolved flux---------------
     line_map = fit_results[line]['flux']
     line_map_err = fit_results[line]['flux_err']
+    snr_map = line_map / line_map_err
 
     # -------converting flux to flam units--------------
     conversion_factor = 1.
@@ -403,9 +404,11 @@ def get_emission_line_map(line, fit_results, args, log_flux_min=-1.5, log_flux_m
     line_map_err /= conversion_factor # now in ergs/s/cm^2/kpc^2
 
     # --------curtailing to real values only-------------------
-    mask = ~(np.isfinite(line_map))
+    mask = ~(np.isfinite(line_map)) | (snr_map < 1e-3)
     if log_flux_max is not None: mask = mask | (line_map > 10 ** log_flux_max)
     if log_flux_min is not None: mask = mask | (line_map < 10 ** log_flux_min)
+    line_map = np.where(mask, line_map, np.nan)
+    line_map_err = np.where(mask, line_map_err, np.nan)
 
     # ---------getting integrated flux------------
     ny, nx = np.shape(line_map)
@@ -698,5 +701,5 @@ if __name__ == "__main__":
                 print(f'{line} is not available for object {args.id}')
 
         print(f'\nCompleted ID {args.id} in {timedelta(seconds=(datetime.now() - start_time2).seconds)}, {len(df) - index - 1} to go!')
-
-    print(f'Completed in {timedelta(seconds=(datetime.now() - start_time).seconds)}')
+   
+   print(f'Completed in {timedelta(seconds=(datetime.now() - start_time).seconds)}')
