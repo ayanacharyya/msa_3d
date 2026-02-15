@@ -702,4 +702,4 @@ if __name__ == "__main__":
 
         print(f'\nCompleted ID {args.id} in {timedelta(seconds=(datetime.now() - start_time2).seconds)}, {len(df) - index - 1} to go!')
    
-   print(f'Completed in {timedelta(seconds=(datetime.now() - start_time).seconds)}')
+    print(f'Completed in {timedelta(seconds=(datetime.now() - start_time).seconds)}')
