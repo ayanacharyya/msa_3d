@@ -882,8 +882,8 @@ if __name__ == "__main__":
 
     #logOH_min, logOH_max = 7.0, 8.0
     logOH_min, logOH_max = None, None
-    log_sfr_min, log_sfr_max = 16, 21
-    #log_sfr_min, log_sfr_max = None, None
+    #log_sfr_min, log_sfr_max = 16, 21
+    log_sfr_min, log_sfr_max = None, None
     
     # -------------setup directories and global variables----------------
     maps_fits_dir = args.output_dir / 'maps'
@@ -892,6 +892,7 @@ if __name__ == "__main__":
     quants_fits_dir.mkdir(exist_ok=True, parents=True)
 
     catalog_file = args.input_dir / 'redshifts.dat'
+    tie_vdisp_text = '_tie_vdisp' if args.tie_vdisp else ''
 
     # ----------------reading in catalog---------------------
     df = read_msa3d_catalog(catalog_file)
@@ -908,8 +909,8 @@ if __name__ == "__main__":
         args.upto_pix = args.upto_arcsec / msa_pix_size_arcsec
 
         # ------determining directories and filenames---------
-        args.maps_fits_file = maps_fits_dir / f'{args.id:05d}.maps.fits'
-        args.quants_fits_file = quants_fits_dir / f'{args.id:05d}_Zdiag_{args.Zdiag}.quants.fits'
+        args.maps_fits_file = maps_fits_dir / f'{args.id:05d}{tie_vdisp_text}.maps.fits'
+        args.quants_fits_file = quants_fits_dir / f'{args.id:05d}_Zdiag_{args.Zdiag}{tie_vdisp_text}.quants.fits'
 
         #try:
         # ---------measuring the various quantitites--------

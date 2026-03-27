@@ -3,7 +3,7 @@
     Notes: Performs emission line fitting on MSA-3D datacubes and stores them in fits files
     Author : Ayan
     Created: 06-02-26
-    Example: run make_msa3d_line_maps.py --do_all_obj
+    Example: run make_msa3d_line_maps.py --do_all_obj --tie_vdisp
              run make_msa3d_line_maps.py --id 2145 --plot_line_flux_maps --save_linefit_plot --ncores 4
              run make_msa3d_line_maps.py --id 2145 --plot_line_quant_maps
              run make_msa3d_line_maps.py --id 2145 --debug_linefit 15,12
@@ -663,6 +663,7 @@ if __name__ == "__main__":
     args.fig_dir = args.output_dir / 'plots'
 
     catalog_file = args.input_dir / 'redshifts.dat'
+    tie_vdisp_text = '_tie_vdisp' if args.tie_vdisp else ''
 
     # ----------------reading in catalog---------------------
     df = read_msa3d_catalog(catalog_file)
@@ -679,7 +680,7 @@ if __name__ == "__main__":
 
         # ------determining directories and filenames---------
         args.cube_fits_file = cube_fits_dir / f'cube_square_medians_{args.id:d}_hdr_rect_err.fits'
-        args.maps_fits_file = maps_fits_dir / f'{args.id:05d}.maps.fits'
+        args.maps_fits_file = maps_fits_dir / f'{args.id:05d}{tie_vdisp_text}.maps.fits'
 
         args.linefit_fig_dir = args.fig_dir / f'{args.id}_linefit_plots'
         args.linefit_fig_dir.mkdir(exist_ok=True, parents=True)
