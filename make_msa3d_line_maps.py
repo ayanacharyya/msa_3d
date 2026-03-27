@@ -4,10 +4,10 @@
     Author : Ayan
     Created: 06-02-26
     Example: run make_msa3d_line_maps.py --do_all_obj
-             run make_msa3d_line_maps.py --id 2145 --plot_flux_maps --save_linefit_plot --n_cores 4
-             run make_msa3d_line_maps.py --id 2145 --plot_line_maps
-             run make_msa3d_line_maps.py --id 2145 --debug_linefit 22,12
-             run make_msa3d_line_maps.py --do_all_obj --save_linefit_plot --plot_flux_maps --plot_line_maps --n_cores 6
+             run make_msa3d_line_maps.py --id 2145 --plot_line_flux_maps --save_linefit_plot --ncores 4
+             run make_msa3d_line_maps.py --id 2145 --plot_line_quant_maps
+             run make_msa3d_line_maps.py --id 2145 --debug_linefit 15,12
+             run make_msa3d_line_maps.py --do_all_obj --save_linefit_plot --plot_line_flux_maps --plot_line_quant_maps --ncores 6
 '''
 
 from header import *
@@ -60,10 +60,25 @@ def get_ifu_cube(cube_fits_file):
     wavelengths = wcs.all_pix2world(pixel_coords, 0)[:, 2]
     wavelengths *= 1e10 # from meters to Angstroms
 
-    return cube, cube_err, wavelengths, wcs
+    # -----------converting flux units from MJy/sr to ergs/s/cm^2/A-----------
+    w = pywcs.WCS(header)
+    pixel_area_deg2 = pywcs.utils.proj_plane_pixel_area(w) # pixel area in deg^2 directly from the CD matrix
+    pixel_area_sr = pixel_area_deg2 * (np.pi / 180)**2 # convert to sr
+    cube = cube * 1e6 * pixel_area_sr # conversion factor from MJy/sr to Jy/pix
+    cube_err = cube_err * 1e6 * pixel_area_sr # conversion factor from MJy/sr to Jy/pix
+    
+    factors = 2.99792458e-5 / (wavelengths**2) # conversion factor from Jy to ergs/s/cm^2/A
+    constant_factor = 1e-19
+
+    cube = cube * factors[:, np.newaxis, np.newaxis] / constant_factor
+    cube_err = cube_err * factors[:, np.newaxis, np.newaxis] / constant_factor
+
+
+
+    return cube, cube_err, wavelengths, wcs, constant_factor
 
 # --------------------------------------------------------------------------------------------------------------------
-def linefit_cube(cube, wavelengths, args, cube_err=None, flam_col='flam', flam_u_col='flam_u', wave_col='rest_wave', label_col='labels', cont_col='cont', snr_thresh=1.5):
+def linefit_cube(cube, wavelengths, args, cube_err=None, flam_col='flam', flam_u_col='flam_u', wave_col='rest_wave', label_col='labels', cont_col='cont', snr_thresh=1.5, flux_factor=1.):
     '''
     Runs spaxel-by-spaxel emission line fitting of the emission line list provided (as args.line_list)
     Accounts for the corresponding errorcube, if provided
@@ -99,13 +114,13 @@ def linefit_cube(cube, wavelengths, args, cube_err=None, flam_col='flam', flam_u
 
     start_time3 = datetime.now()
     # ----------parallelising--------------
-    if args.n_cores > 1:
+    if args.ncores > 1:
         spaxel_indices = [(x, y) for y in range(ny) for x in range(nx)]
-        worker_func = partial(linefit_spaxel, cube=cube, cube_err=cube_err, rest_wave_arr=rest_wave_arr, df_lines=df_lines, line_groups=line_groups, args=args, flam_col=flam_col, flam_u_col=flam_u_col, wave_col=wave_col, label_col=label_col, cont_col=cont_col, snr_thresh=snr_thresh) # Use partial to fix the arguments that don't change
+        worker_func = partial(linefit_spaxel, cube=cube, cube_err=cube_err, rest_wave_arr=rest_wave_arr, df_lines=df_lines, line_groups=line_groups, args=args, flam_col=flam_col, flam_u_col=flam_u_col, wave_col=wave_col, label_col=label_col, cont_col=cont_col, snr_thresh=snr_thresh, flux_factor=flux_factor) # Use partial to fix the arguments that don't change
 
-        print(f'\t\tStarting fit on {ny*nx} spaxels using {args.n_cores} cores...')
+        print(f'\t\tStarting fit on {ny*nx} spaxels using {args.ncores} cores...')
         
-        with Pool(processes=args.n_cores) as pool:
+        with Pool(processes=args.ncores) as pool:
             raw_results = pool.map(worker_func, spaxel_indices) # map returns results in the order of spaxel_indices
             
         for x, y, res in raw_results:
@@ -122,7 +137,7 @@ def linefit_cube(cube, wavelengths, args, cube_err=None, flam_col='flam', flam_u
                 if args.debug_linefit is not None: i, j = args.debug_linefit
 
                 # ------------calling line fitter for this spaxel---------------
-                i, j, fit_results_spaxel = linefit_spaxel((i, j), cube, cube_err, rest_wave_arr, df_lines, line_groups, args, flam_col=flam_col, flam_u_col=flam_u_col, wave_col=wave_col, label_col=label_col, cont_col=cont_col)                
+                i, j, fit_results_spaxel = linefit_spaxel((i, j), cube, cube_err, rest_wave_arr, df_lines, line_groups, args, flam_col=flam_col, flam_u_col=flam_u_col, wave_col=wave_col, label_col=label_col, cont_col=cont_col, flux_factor=flux_factor)                
                     
                 # ---------printing fit results and exiting, for debugging mode---------
                 if args.debug_linefit is not None:
@@ -148,7 +163,7 @@ def linefit_cube(cube, wavelengths, args, cube_err=None, flam_col='flam', flam_u
     return fit_results
 
 # --------------------------------------------------------------------------------------------------------------------
-def linefit_spaxel(coords, cube, cube_err, rest_wave_arr, df_lines, line_groups, args, flam_col='flam', flam_u_col='flam_u', wave_col='rest_wave', label_col='labels', cont_col='cont', snr_thresh=1.5):
+def linefit_spaxel(coords, cube, cube_err, rest_wave_arr, df_lines, line_groups, args, flam_col='flam', flam_u_col='flam_u', wave_col='rest_wave', label_col='labels', cont_col='cont', snr_thresh=1.5, flux_factor=1.):
     '''
     Runs emission line fitting on one spectrum (spaxel) of the emission line wavelengths provided (df_lines)
     Accounts for the corresponding error spectrum, if provided
@@ -188,7 +203,7 @@ def linefit_spaxel(coords, cube, cube_err, rest_wave_arr, df_lines, line_groups,
 
     # ------------calling line fitter for this spaxel---------------
     if len(df_spec) > 0:
-        fit_results_spaxel = linefit_spectrum(df_spec, df_lines, line_groups, args, i=i, j=j, flam_col=flam_col, flam_u_col=flam_u_col, wave_col=wave_col, label_col=label_col, cont_col=cont_col)                
+        fit_results_spaxel = linefit_spectrum(df_spec, df_lines, line_groups, args, i=i, j=j, flam_col=flam_col, flam_u_col=flam_u_col, wave_col=wave_col, label_col=label_col, cont_col=cont_col, flux_factor=flux_factor)                
     elif not args.silent:
         print(f'\t\t..no valid spectrum in this spaxel. Moving on..')
 
@@ -224,7 +239,7 @@ def global_gaussian_model(x, *popt, rest_waves=None, tie_vdisp=False):
     return model
 
 # --------------------------------------------------------------------------------------------------------------------
-def linefit_spectrum(df_spec, df_lines, line_groups, args, i='X', j='X', flam_col='flam', flam_u_col='flam_u', wave_col='rest_wave', label_col='labels', cont_col='cont'):
+def linefit_spectrum(df_spec, df_lines, line_groups, args, i='X', j='X', flam_col='flam', flam_u_col='flam_u', wave_col='rest_wave', label_col='labels', cont_col='cont', flux_factor=1.):
     '''
     Runs emission line fitting on one spectrum (spaxel) of the emission line wavelengths provided (df_lines)
     Accounts for the corresponding error spectrum, if provided
@@ -251,7 +266,7 @@ def linefit_spectrum(df_spec, df_lines, line_groups, args, i='X', j='X', flam_co
     if args.save_linefit_plot or args.debug_linefit is not None:
         fig, ax = plt.subplots(1, figsize=(12, 3), layout='constrained')
 
-        ax = plot_line_fit_spaxel(ax, df_spec, df_lines, args, popt=None, flam_col=flam_col, flam_u_col=flam_u_col, wave_col=wave_col, label_col=label_col, cont_col=cont_col, contsub_col=contsub_col)
+        ax = plot_line_fit_spaxel(ax, df_spec, df_lines, args, popt=None, flam_col=flam_col, flam_u_col=flam_u_col, wave_col=wave_col, label_col=label_col, cont_col=cont_col, contsub_col=contsub_col, flux_factor=flux_factor)
         ax = plot_linelist(ax, df_lines, fontsize=args.fontsize / args.fontfactor, color='cornflowerblue')
         for line_wave in df_lines[wave_col]: ax.axvspan(line_wave - args.mask_window, line_wave + args.mask_window, color='gray', alpha=0.2)
 
@@ -286,10 +301,9 @@ def linefit_spectrum(df_spec, df_lines, line_groups, args, i='X', j='X', flam_co
 
         try:
             popt, pcov = curve_fit(group_model, df_chunk[wave_col], df_chunk[contsub_col], p0=p0, sigma=df_chunk[flam_u_col], bounds=(lbounds, ubounds))
-
             perr = np.sqrt(np.diag(pcov))
             
-            # ------map[ing] parameters back to results------------
+            # ------mapping parameters back to results------------
             v_fit, v_err = popt[0], perr[0]
 
             for ind in range(len(g_labels)):
@@ -303,7 +317,7 @@ def linefit_spectrum(df_spec, df_lines, line_groups, args, i='X', j='X', flam_co
                 # ------Integrated Flux Calculation-0-----------
                 mu_w = g_waves[ind] * (1 + ufloat(v_fit, v_err) / c_km_s)
                 sig_w = (ufloat(sig_fit, sig_err) * mu_w) / c_km_s
-                flux = ufloat(amp_fit, amp_err) * sig_w * np.sqrt(2 * np.pi)
+                flux = ufloat(amp_fit, amp_err) * sig_w * np.sqrt(2 * np.pi) * flux_factor # multiplying the constant factor for flux here so that output fluxes are in units of ergs/s/cm^2
                 
                 fit_results_spaxel[g_labels[ind]] = {
                     'flux': flux.n, 'flux_err': flux.s,
@@ -312,12 +326,11 @@ def linefit_spectrum(df_spec, df_lines, line_groups, args, i='X', j='X', flam_co
                 }
             # ---------plotting the fit onto the observed spectrum-----------
             if args.save_linefit_plot or args.debug_linefit is not None:
-                norm_factor = 1.
                 x_arr = np.linspace(min_w, max_w, 100)
                 model_flux = group_model(x_arr, *popt)
                 model_cont = np.interp(x_arr, df_chunk[wave_col], df_chunk[cont_col])
                 total_model = model_flux + model_cont # need to add the continuum back in just for plotting purposes
-                ax.plot(x_arr, total_model / norm_factor, color='k', lw=1.5, linestyle='--', label='Fitted model', zorder=5)
+                ax.plot(x_arr, total_model, color='k', lw=1.5, linestyle='--', label='Fitted model', zorder=5)
 
         except Exception as e:
             print(f'Fit failed due to: {e}')
@@ -330,30 +343,28 @@ def linefit_spectrum(df_spec, df_lines, line_groups, args, i='X', j='X', flam_co
     return fit_results_spaxel
 
 # --------------------------------------------------------------------------------------------------------------------
-def plot_line_fit_spaxel(ax, df_spec, df_lines, args, popt=None, color='orangered', flam_col='flam', flam_u_col='flam_u', wave_col='rest_wave', label_col='labels', cont_col='cont', contsub_col='flam_contsub'):
+def plot_line_fit_spaxel(ax, df_spec, df_lines, args, popt=None, color='orangered', flam_col='flam', flam_u_col='flam_u', wave_col='rest_wave', label_col='labels', cont_col='cont', contsub_col='flam_contsub', flux_factor=1.):
     '''
     Plots the spectrum along one spaxel in the given axis handle, for debugging purposes
     Returns the axis handle
     '''
-    norm_factor = 1 #if args.show_log_flux else 1e-19
-
     # ---------------plot the observed spectrum---------------
-    ax.step(df_spec[wave_col], df_spec[flam_col] / norm_factor, lw=1, c=color, alpha=1, where='mid')
-    ax.plot(df_spec[wave_col], df_spec[cont_col] / norm_factor, lw=1, c='grey', alpha=1)
-    ax.fill_between(df_spec[wave_col], (df_spec[flam_col] - df_spec[flam_u_col]/2) / norm_factor, (df_spec[flam_col] + df_spec[flam_u_col]/2) / norm_factor, lw=0, color=color, alpha=0.5, step='pre')#, drawstyle='steps')
+    ax.step(df_spec[wave_col], df_spec[flam_col], lw=1, c=color, alpha=1, where='mid')
+    ax.plot(df_spec[wave_col], df_spec[cont_col], lw=1, c='grey', alpha=1)
+    ax.fill_between(df_spec[wave_col], (df_spec[flam_col] - df_spec[flam_u_col]/2), (df_spec[flam_col] + df_spec[flam_u_col]/2), lw=0, color=color, alpha=0.5, step='pre')#, drawstyle='steps')
 
     # -----------plot the fitted spectrum--------------------
     if popt is not None:
         x_arr = np.linspace(df_spec[wave_col].min(), df_spec[wave_col].max(), 1000)
         total_model = global_gaussian_model(x_arr, *popt, rest_waves=df_lines[wave_col].values, tie_vdisp=args.tie_vdisp)
-        ax.plot(x_arr, total_model / norm_factor, color='k', lw=1.5, linestyle='--', label='Fitted model', zorder=5)
+        ax.plot(x_arr, total_model, color='k', lw=1.5, linestyle='--', label='Fitted model', zorder=5)
 
     if args.show_log_flux: ax.set_yscale('log')
 
     # ----------------annotate axis labels---------------
     ax.set_xlabel(r'Rest-frame wavelength ($\AA$)', fontsize=args.fontsize)
-    #ylabel = r'f$_{\lambda}$ ' + '(%.0e ' % norm_factor + r'ergs/s/cm$^2$/A)'
-    ax.set_ylabel(r'f$_{\lambda}$ ergs/s/cm$^2$/A)', fontsize=args.fontsize)
+    if flux_factor == 1: ax.set_ylabel(r'f$_{\lambda}$ (ergs/s/cm$^2$/A)', fontsize=args.fontsize)
+    else: ax.set_ylabel(r'f$_{\lambda}$' + f'({flux_factor:.0e} ' + r'ergs/s/cm$^2$/A)', fontsize=args.fontsize)
     #if not args.show_log_flux: ax.set_ylim(0, args.flam_max) # flam_max should be in units of 1e-19 ergs/s/cm^2/A
     ax.tick_params(axis='both', which='major', labelsize=args.fontsize)
 
@@ -398,17 +409,12 @@ def get_emission_line_map(line, fit_results, args, log_flux_min=-1.5, log_flux_m
     line_map_err = fit_results[line]['flux_err']
     snr_map = line_map / line_map_err
 
-    # -------converting flux to flam units--------------
-    conversion_factor = 1.
-    line_map /= conversion_factor # now in ergs/s/cm^2/kpc^2
-    line_map_err /= conversion_factor # now in ergs/s/cm^2/kpc^2
-
     # --------curtailing to real values only-------------------
-    mask = ~(np.isfinite(line_map)) | (snr_map < 1e-3)
+    mask = ~(np.isfinite(line_map)) #| (snr_map < 1e-3)
     if log_flux_max is not None: mask = mask | (line_map > 10 ** log_flux_max)
     if log_flux_min is not None: mask = mask | (line_map < 10 ** log_flux_min)
-    line_map = np.where(mask, line_map, np.nan)
-    line_map_err = np.where(mask, line_map_err, np.nan)
+    line_map = np.where(mask, np.nan, line_map)
+    line_map_err = np.where(mask, np.nan, line_map_err)
 
     # ---------getting integrated flux------------
     ny, nx = np.shape(line_map)
@@ -526,7 +532,7 @@ def plot_line_flux_maps(fit_results, args):
         col = index % ncol
         
         # ------------extract linemap from fit_results dict--------------
-        line_map, _  = get_emission_line_map(fitted_line, fit_results, args, log_flux_min=None, log_flux_max=None, dered=True)
+        line_map, _  = get_emission_line_map(fitted_line, fit_results, args, log_flux_min=None, log_flux_max=None, dered=False)
         fluxmap = unp.nominal_values(line_map.data)
 
         # ------------plot linemap--------------
@@ -556,7 +562,7 @@ def plot_line_flux_maps(fit_results, args):
     return fig
 
 # --------------------------------------------------------------------------------------------------------------------
-def plot_line_maps(fit_results, line, args):
+def plot_line_quant_maps(fit_results, line, args):
     '''
     Plots the emission line flux and kinematic maps in one figure and saves it to file
     Returns the figure handle
@@ -680,10 +686,10 @@ if __name__ == "__main__":
         
         if not os.path.exists(args.maps_fits_file) or args.clobber or args.debug_linefit is not None:
             # -----------read in the cube--------------
-            cube, cube_err, wavelengths, wcs = get_ifu_cube(args.cube_fits_file)
+            cube, cube_err, wavelengths, wcs, flux_factor = get_ifu_cube(args.cube_fits_file)
 
             # -----------emission line fitting--------------
-            fit_results = linefit_cube(cube, wavelengths, args, cube_err=cube_err, snr_thresh=1.5)
+            fit_results = linefit_cube(cube, wavelengths, args, cube_err=cube_err, snr_thresh=1.5, flux_factor=flux_factor)
 
             # -----------save the emission maps in fits file-------------
             save_line_maps_fits(fit_results, args.maps_fits_file, wcs, args)
@@ -691,12 +697,12 @@ if __name__ == "__main__":
             fit_results, spatial_header = read_line_maps_fits(args.maps_fits_file)
         
         # --------plot the emission line maps-------------
-        if args.plot_flux_maps:
+        if args.plot_line_flux_maps:
             fig = plot_line_flux_maps(fit_results, args)
-        if args.plot_line_maps:
+        if args.plot_line_quant_maps:
             line = 'H-alpha'
             if line in list(fit_results.keys()):
-                fig = plot_line_maps(fit_results, line, args)
+                fig = plot_line_quant_maps(fit_results, line, args)
             else:
                 print(f'{line} is not available for object {args.id}')
 

@@ -46,7 +46,7 @@ def compute_EB_V(Ha_flux, Hb_flux,verbose=False):
         
         #EB_V_limit_mask = unp.nominal_values(EB_V) < 5.0
         net_mask  = net_mask | new_mask | obs_ratio.mask #| EB_V_limit_mask
-        EB_V = unp.uarray(np.where(net_mask, unp.nominal_values(net_mask), np.nan), np.where(net_mask, unp.std_devs(net_mask), np.nan))
+        EB_V = unp.uarray(np.where(net_mask, np.nan, unp.nominal_values(EB_V)), np.where(net_mask, np.nan, unp.std_devs(EB_V)))
     
     else: # if it is scalar
         try:
@@ -73,6 +73,7 @@ def get_EB_V(fit_results, args):
 
     EB_V_map = compute_EB_V(Ha_map, Hb_map)
     EB_V_int = compute_EB_V(Ha_int, Hb_int)
+    #EB_V_map = np.zeros(np.shape(Ha_map))
 
     return EB_V_map, EB_V_int
 # --------------------------------------------------------------------------------------------------------------------
@@ -294,7 +295,7 @@ def get_Z_C19(fit_results, args):
     '''
     # ------getting appropriate emission lines and calibration coefficients--------------
     if args.Zdiag == 'R3':
-        line_map_arr, line_int_arr = get_emission_line_maps(fit_results, ['OIII-5007', 'H-beta'], args)
+        line_map_arr, line_int_arr = get_emission_line_maps(fit_results, ['OIII-5007', 'H-beta'], args, dered=False)
         if line_map_arr is None: return None, ufloat(np.nan, np.nan)
         
         ratio_map = take_safe_log_ratio(line_map_arr[0], line_map_arr[1])
@@ -655,8 +656,67 @@ def plot_quant_map(ax, quant, quant_maps, args, cmap='cividis', clabel='', takel
     '''
     quant_map, _, quant_int, quant_mask = get_quant_from_quant_maps(quant, quant_maps)
     quant_masked = np.ma.masked_where(quant_mask, quant_map)
+    if quant == 'logOH': quant +=  f' ({args.Zdiag})'
+    elif quant == 'sfr': quant =  quant.upper()
     ax = plot_2D_map(quant_masked, ax, f'{quant}: {quant_int:.2f}', args, cmap=cmap, clabel=clabel, takelog=takelog, vmin=vmin, vmax=vmax, hide_xaxis=hide_xaxis, hide_yaxis=hide_yaxis, hide_cbar=hide_cbar, hide_cbar_ticks=hide_cbar_ticks, cticks_integer=cticks_integer)
 
+    return ax
+
+def odr_fit(df_input, quant_x='distance_arcsec', quant_y='log_OH', recenter_y=False):
+    '''
+    Fits the x and y columns using WLS
+    Returns fitted parameters
+    '''
+    df = df_input[[quant_x, quant_y, quant_y + '_u']]
+    # ---------rescaling y-axis for better fit----------
+    if recenter_y and 'OH' in quant_y:
+        recenter_to = 8.0
+        df[quant_y] = df[quant_y] - recenter_to
+        print(f'\nDeb3541: in odr_fit(), recentering {quant_y} to {recenter_to}..')
+
+    df = df.dropna(axis=0)
+    try:
+        model = Model(lambda param, x: np.poly1d(param)(x))
+        data = RealData(df[quant_x], df[quant_y], sy=df[quant_y + '_u'] if quant_y + '_u' in df and np.sum(df[quant_y + '_u']) > 0 else None, sx=df[quant_x + '_u'] if quant_x + '_u' in df and np.sum(df[quant_x + '_u']) > 0 else None)
+        odr = ODR(data, model, beta0=[0., 0.])  # Initial guess for slope and intercept
+        output = odr.run()
+        linefit = [ufloat(output.beta[0], output.sd_beta[0]), ufloat(output.beta[1], output.sd_beta[1])]
+        if recenter_y and 'OH' in quant_y: linefit[1] = linefit[1] + recenter_to
+    except:
+        print(f'WARNING: Could not fit radial profile via ODR, returning nan fit parameters')
+        linefit = [ufloat(np.nan, np.nan), ufloat(np.nan, np.nan)]
+
+    return linefit
+
+def plot_fitted_line(ax, linefit, xarr, fit_color, args, quant='log_OH', label=None):
+    '''
+    Computes and plots the fitted line given the linear fit parameters, on an axisting axis handle
+    Returns axis handle
+    '''
+    xarr = np.linspace(np.min(xarr), np.max(xarr), 10)
+    if quant in ['logOH', 'Z', 'log_OH']: main_text = r'$\nabla$Z$_r$'
+    else: main_text = r'$\nabla$'
+
+    if len(np.shape(linefit)) == 1:
+        yarr = np.poly1d(linefit)(xarr)
+        y_fitted = unp.nominal_values(yarr)
+        y_low = unp.nominal_values(yarr) - unp.std_devs(yarr)
+        y_up = unp.nominal_values(yarr) + unp.std_devs(yarr)
+        value_text = f'{linefit[0]: .2f}'    
+    else:
+        linefit_with_unc = [ufloat(linefit[0][index], np.mean((linefit[0][index] - linefit[1][index], linefit[2][index] - linefit[0][index]))) for index in range(np.shape(linefit)[1])]
+        yarr = np.poly1d(linefit_with_unc)(xarr)
+        y_fitted = unp.nominal_values(yarr)
+        y_low = unp.nominal_values(yarr) - unp.std_devs(yarr)
+        y_up = unp.nominal_values(yarr) + unp.std_devs(yarr)
+        value_text = r'%.2f$^{%.2f}_{%.2f}$' % (linefit[0][0], linefit[0][0] - linefit[1][0], linefit[2][0] - linefit[0][0])
+    
+    ax.plot(xarr, y_fitted, color=fit_color, lw=1, ls='dashed')
+    ax.fill_between(xarr, y_low, y_up, color=fit_color, lw=0, alpha=0.3)
+
+    if label is None: label = main_text + ' = ' + value_text
+    ax.text(0.1, 0.05, label, c=fit_color, fontsize=args.fontsize / args.fontfactor, ha='left', va='bottom', transform=ax.transAxes)
+    
     return ax
 
 def plot_met_sfr_corr(ax, quant_maps, args, color='salmon', colorby=None, cmap='cividis', hide_xaxis=False, hide_yaxis=False, clabel='', hide_cbar=True, hide_cbar_ticks=False, cticks_integer=True, log_sfr_min=None, log_sfr_max=None, logOH_min=None, logOH_max=None):
@@ -692,9 +752,7 @@ def plot_met_sfr_corr(ax, quant_maps, args, color='salmon', colorby=None, cmap='
     df = df.drop(columns=['logOH_mask', 'sfr_mask', 'sfr', 'sfr_u'])
     df = df.dropna(subset=['logOH', 'log_sfr']).reset_index(drop=True)
     
-    for col in ['log_sfr_u']: df = df[df[col] < np.percentile(df[col], 99)] # curtailing extreme outliers in uncertainty
-    
-
+    #for col in ['log_sfr_u']: df = df[df[col] < np.percentile(df[col], 99)] # curtailing extreme outliers in uncertainty
     print(f'{len(df)} of {ndf} spaxels remain with finite logOH and SFR')
 
     # -----------plotting scatter----------------------
@@ -703,6 +761,10 @@ def plot_met_sfr_corr(ax, quant_maps, args, color='salmon', colorby=None, cmap='
 
     p = ax.scatter(df['log_sfr'], df['logOH'], s=10, lw=1, ec='k', color=color)
     ax.errorbar(df['log_sfr'], df['logOH'], xerr=df['log_sfr_u'], yerr=df['logOH_u'], c=color, fmt='none', lw=0.5, alpha=0.7, zorder=-5)
+
+    # -----------fitting scatter plot----------------------
+    linefit_odr = odr_fit(df, quant_x='log_sfr', quant_y='logOH', recenter_y=True)
+    ax = plot_fitted_line(ax, linefit_odr, df['log_sfr'], 'salmon', args, quant='logOH', label=f'Slope = {linefit_odr[0]: .2f}')
 
     # -----------------annotating axes---------------------
     ax.set_xlim(log_sfr_min, log_sfr_max)
@@ -849,55 +911,55 @@ if __name__ == "__main__":
         args.maps_fits_file = maps_fits_dir / f'{args.id:05d}.maps.fits'
         args.quants_fits_file = quants_fits_dir / f'{args.id:05d}_Zdiag_{args.Zdiag}.quants.fits'
 
-        try:
-            # ---------measuring the various quantitites--------
-            if not os.path.exists(args.quants_fits_file) or args.clobber:
-                # -----------read in the emission line maps--------------
-                fit_results, spatial_header = read_line_maps_fits(args.maps_fits_file)
-                wcs = pywcs.WCS(spatial_header)
+        #try:
+        # ---------measuring the various quantitites--------
+        if not os.path.exists(args.quants_fits_file) or args.clobber:
+            # -----------read in the emission line maps--------------
+            fit_results, spatial_header = read_line_maps_fits(args.maps_fits_file)
+            wcs = pywcs.WCS(spatial_header)
 
-                args.available_lines = list(fit_results.keys())
-                if 'H-alpha' not in args.available_lines:
-                    print(f'ID {args.id} (z={args.z:.2f}) does not have H-alpha, so skipping it..')
-                    continue
-                if 'H-beta' not in args.available_lines:
-                    print(f'ID {args.id} (z={args.z:.2f}) does not have H-beta, so skipping it..')
-                    continue
+            args.available_lines = list(fit_results.keys())
+            if 'H-alpha' not in args.available_lines:
+                print(f'ID {args.id} (z={args.z:.2f}) does not have H-alpha, so skipping it..')
+                continue
+            if 'H-beta' not in args.available_lines:
+                print(f'ID {args.id} (z={args.z:.2f}) does not have H-beta, so skipping it..')
+                continue
 
-                args.EB_V_map, args.EB_V_int = get_EB_V(fit_results, args)
+            args.EB_V_map, args.EB_V_int = get_EB_V(fit_results, args)
 
-                # -----------computing various quantities--------------
-                quant_maps = compute_quant_maps(fit_results, args)
+            # -----------computing various quantities--------------
+            quant_maps = compute_quant_maps(fit_results, args)
 
-                # -----------save the quanttity maps in fits file-------------
-                save_quant_maps_fits(quant_maps, args.quants_fits_file, wcs, args)
-            else:
-                quant_maps, spatial_header = read_quant_maps_fits(args.quants_fits_file)
-            
-            # --------plot the qunatity maps-------------
-            if args.plot_metallicity:
-                fig, ax = plt.subplots(1, figsize=(8, 8), layout='constrained')
-                
-                ax = plot_quant_map(ax, 'logOH', quant_maps, args, cmap='cividis', takelog=False, vmin=logOH_min, vmax=logOH_max, hide_cbar=False)
-                
-                fig.text(0.1, 0.98, f'ID {args.id}', fontsize=args.fontsize, c='k', ha='left', va='top')
-                save_fig(fig, args.fig_dir, f'{args.id}_metallicity_{args.Zdiag}_maps.png', args)    
-
-            if args.plot_met_sfr:
-                fig, axes = plt.subplots(1, 3, figsize=(10, 4.5))
-                fig.subplots_adjust(left=0.06, right=0.98, bottom=0.12, top=0.9, wspace=0.5)
-                
-                axes[0] = plot_quant_map(axes[0], 'logOH', quant_maps, args, cmap='cividis', takelog=False, vmin=logOH_min, vmax=logOH_max, hide_cbar=False)
-                axes[1] = plot_quant_map(axes[1], 'sfr', quant_maps, args, cmap='Blues', takelog=True, vmin=log_sfr_min, vmax=log_sfr_max, hide_yaxis=True, hide_cbar=False)
-                axes[2] = plot_met_sfr_corr(axes[2], quant_maps, args, color='salmon', log_sfr_min=log_sfr_min, log_sfr_max=log_sfr_max, logOH_min=logOH_min, logOH_max=logOH_max)
-                
-                fig.text(0.05, 0.95, f'ID {args.id}', fontsize=args.fontsize, c='k', ha='left', va='top')
-                save_fig(fig, args.fig_dir, f'{args.id}_metallicity_{args.Zdiag}_SFR_corr.png', args)    
-
-            print(f'\nCompleted ID {args.id} in {timedelta(seconds=(datetime.now() - start_time2).seconds)}, {len(df) - index - 1} to go!')
+            # -----------save the quanttity maps in fits file-------------
+            save_quant_maps_fits(quant_maps, args.quants_fits_file, wcs, args)
+        else:
+            quant_maps, spatial_header = read_quant_maps_fits(args.quants_fits_file)
         
+        # --------plot the qunatity maps-------------
+        if args.plot_metallicity:
+            fig, ax = plt.subplots(1, figsize=(8, 8), layout='constrained')
+            
+            ax = plot_quant_map(ax, 'logOH', quant_maps, args, cmap='cividis', takelog=False, vmin=logOH_min, vmax=logOH_max, hide_cbar=False)
+            
+            fig.text(0.1, 0.98, f'ID {args.id}', fontsize=args.fontsize, c='k', ha='left', va='top')
+            save_fig(fig, args.fig_dir, f'{args.id}_metallicity_{args.Zdiag}_maps.png', args)    
+
+        if args.plot_met_sfr:
+            fig, axes = plt.subplots(1, 3, figsize=(10, 4.5))
+            fig.subplots_adjust(left=0.06, right=0.98, bottom=0.12, top=0.9, wspace=0.5)
+            
+            axes[0] = plot_quant_map(axes[0], 'logOH', quant_maps, args, cmap='cividis', takelog=False, vmin=logOH_min, vmax=logOH_max, hide_cbar=False)
+            axes[1] = plot_quant_map(axes[1], 'sfr', quant_maps, args, cmap='Blues', takelog=True, vmin=log_sfr_min, vmax=log_sfr_max, hide_yaxis=True, hide_cbar=False)
+            axes[2] = plot_met_sfr_corr(axes[2], quant_maps, args, color='salmon', log_sfr_min=log_sfr_min, log_sfr_max=log_sfr_max, logOH_min=logOH_min, logOH_max=logOH_max)
+            
+            fig.text(0.05, 0.95, f'ID {args.id}', fontsize=args.fontsize, c='k', ha='left', va='top')
+            save_fig(fig, args.fig_dir, f'{args.id}_metallicity_{args.Zdiag}_SFR_corr.png', args)    
+
+        print(f'\nCompleted ID {args.id} in {timedelta(seconds=(datetime.now() - start_time2).seconds)}, {len(df) - index - 1} to go!')
+        '''
         except Exception as e:
             print(f'Could not make plots for ID {args.id} because {e}')
             pass
- 
+        '''
     print(f'Completed in {timedelta(seconds=(datetime.now() - start_time).seconds)}')
