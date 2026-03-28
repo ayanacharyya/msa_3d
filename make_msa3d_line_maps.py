@@ -399,7 +399,7 @@ def plot_linelist(ax, df_lines, fontsize=10, color='cornflowerblue'):
     return ax
 
 # --------------------------------------------------------------------------------------------------------------------
-def get_emission_line_map(line, fit_results, args, log_flux_min=-1.5, log_flux_max=1.5, dered=True):
+def get_emission_line_map(line, fit_results, args, log_flux_min=-21, log_flux_max=-18, dered=True):
     '''
     Retrieve the emission map for a given line from the given dictionary of emission lines
     Returns the 2D line map and the corresponding 2D uncertainty map
@@ -516,8 +516,8 @@ def plot_line_flux_maps(fit_results, args):
     # --------------setting up figures------------------------
     show_log = True
     nrow, ncol = 2, 5
-    if show_log: cmin, cmax, ncbins = -1.5, 1.5, 6
-    else: cmin, cmax, ncbins = 0, 35, 4
+    if show_log: cmin, cmax, ncbins = -21, -18, 6
+    else: cmin, cmax, ncbins = 0, 1e-18, 4
     cmin_snr, cmax_snr = 1, 10
     cmap = 'cividis'
     fig, axes = plt.subplots(nrow, ncol, figsize=(8, 6), layout='constrained')
@@ -544,7 +544,7 @@ def plot_line_flux_maps(fit_results, args):
             axes_snr[row, col] = plot_2D_map(snrmap, axes_snr[row, col], f'{available_lines[index]}: SNR', args, cmap=cmap, takelog=False, vmin=cmin_snr, vmax=cmax_snr, hide_xaxis=row < nrow - 1, hide_yaxis=col > 0)
 
    # --------common colorbar------------------
-    fig = make_colorbar_top(fig, axes, f'ID {args.id}: Log flux' if show_log else f'ID {args.id}: Flux', cmap, cmin, cmax, ncbins, args.fontsize, aspect=60)
+    fig = make_colorbar_top(fig, axes, f'ID {args.id}: Log flux (ergs/s/cm^2)' if show_log else f'ID {args.id}: Flux (ergs/s/cm^2)', cmap, cmin, cmax, ncbins, args.fontsize, aspect=60)
     if args.plot_snr: fig_snr = make_colorbar_top(fig_snr, axes_snr, f'{args.id}: SNR', cmap, cmin_snr, cmax_snr, ncbins, args.fontsize, aspect=60)
 
     # ----------to remove empty subplots--------------------
@@ -555,7 +555,7 @@ def plot_line_flux_maps(fit_results, args):
         if args.plot_snr: axes_snr[row, col].remove()
 
      # ---------saving figures-------------------
-    figname = f'{args.id}_fluxmaps.png'
+    figname = f'{args.id}_fluxmaps{tie_vdisp_text}.png'
     save_fig(fig, args.fig_dir, figname, args)    
     if args.plot_snr: save_fig(fig_snr, args.fig_dir, Path(str(figname).replace('flux', 'snr')), args)
 
@@ -569,14 +569,15 @@ def plot_line_quant_maps(fit_results, line, args):
     '''
     # --------------setting up figures------------------------
     nrow, ncol = 1, 3
-    cmin_dict = {'flux': -1.5, 'vel': -100, 'sigma': 0}
-    cmax_dict = {'flux': 1.5, 'vel': 100, 'sigma': 200}
+    cmin_dict = {'flux': -21, 'vel': -100, 'sigma': 0}
+    cmax_dict = {'flux': -18, 'vel': 100, 'sigma': 200}
     cmap_dict = {'flux': 'cividis', 'vel':'PuOr', 'sigma': 'plasma'}
     take_log_dict = {'flux': True, 'vel': False, 'sigma': False}
     
     cmin_snr, cmax_snr = 1, 10
     
     fig, axes = plt.subplots(nrow, ncol, figsize=(10, 4.5))
+    fig.subplots_adjust(left=0.07, right=0.93, top=0.9, bottom=0.1, wspace=0.3)
     if args.plot_snr:
         fig_snr, axes_snr = plt.subplots(nrow, ncol, figsize=(10, 4.5), layout='constrained')
 
@@ -594,7 +595,7 @@ def plot_line_quant_maps(fit_results, line, args):
     if args.plot_snr: fig_snr.text(0.15, 0.9, f'ID {args.id}: {line} SNR', fontsize=args.fontsize, c='k', ha='left', va='top')
 
     # ---------saving figures-------------------
-    figname = f'{args.id}_{line}_fitted_maps.png'
+    figname = f'{args.id}_{line}_fitted_maps{tie_vdisp_text}.png'
     save_fig(fig, args.fig_dir, figname, args)    
     if args.plot_snr: save_fig(fig_snr, args.fig_dir, Path(str(figname).replace('maps', 'snr')), args)
 

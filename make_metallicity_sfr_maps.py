@@ -724,6 +724,7 @@ def plot_met_sfr_corr(ax, quant_maps, args, color='salmon', colorby=None, cmap='
     Extracts the metallicity and SFR maps from the given dict of quant_maps, and plots their correlation on the given axis handle
     Returns axis handle
     '''
+    # ----------getting logOH and SFr maps from quant maps--------------
     logOH_map, logOH_map_err, _, logOH_mask = get_quant_from_quant_maps('logOH', quant_maps)
     sfr_map, sfr_map_err, _, sfr_mask = get_quant_from_quant_maps('sfr', quant_maps)
 
@@ -772,7 +773,7 @@ def plot_met_sfr_corr(ax, quant_maps, args, color='salmon', colorby=None, cmap='
 
     ax = annotate_axes(ax, r'Log SFR (M$_\odot$/yr)', r'$\log$ O/H + 12', fontsize=args.fontsize / args.fontfactor, clabel=clabel, hide_xaxis=hide_xaxis, hide_yaxis=hide_yaxis, hide_cbar=hide_cbar, p=p, hide_cbar_ticks=hide_cbar_ticks, cticks_integer=cticks_integer)
 
-    return ax
+    return ax, linefit_odr
 # -------------------------------------------------------------------------------------------------------------------
 
 
@@ -880,10 +881,9 @@ if __name__ == "__main__":
     args.fontfactor = 1.2
     args.id_arr = args.id
 
-    #logOH_min, logOH_max = 7.0, 8.0
-    logOH_min, logOH_max = None, None
-    #log_sfr_min, log_sfr_max = 16, 21
-    log_sfr_min, log_sfr_max = None, None
+    logOH_min, logOH_max = 7.0, 9.0
+    #logOH_min, logOH_max = None, None
+    log_sfr_min, log_sfr_max = -4, 1
     
     # -------------setup directories and global variables----------------
     maps_fits_dir = args.output_dir / 'maps'
@@ -894,9 +894,13 @@ if __name__ == "__main__":
     catalog_file = args.input_dir / 'redshifts.dat'
     tie_vdisp_text = '_tie_vdisp' if args.tie_vdisp else ''
 
+    Z_SFR_slope_file = args.output_dir / 'catalogs' / 'Z_SFR_slopes.csv'
+
     # ----------------reading in catalog---------------------
     df = read_msa3d_catalog(catalog_file)
-    if not args.do_all_obj: df = df[df['id'].isin(args.id_arr)].reset_index(drop=True)
+    #if args.do_all_obj: df_out = pd.DataFrame(columns=np.hstack(df.columns, ['Z_SFR_slope', 'Z_SFR_slope_u', 'Z_SFR_cen', 'Z_SFR_cen_u']))
+    if args.do_all_obj: output_rows_list = []
+    else: df = df[df['id'].isin(args.id_arr)].reset_index(drop=True)
 
     # ----------------looping over the objects in this chunk-------------
     for index, obj in df.iterrows():
@@ -912,55 +916,95 @@ if __name__ == "__main__":
         args.maps_fits_file = maps_fits_dir / f'{args.id:05d}{tie_vdisp_text}.maps.fits'
         args.quants_fits_file = quants_fits_dir / f'{args.id:05d}_Zdiag_{args.Zdiag}{tie_vdisp_text}.quants.fits'
 
-        #try:
-        # ---------measuring the various quantitites--------
-        if not os.path.exists(args.quants_fits_file) or args.clobber:
-            # -----------read in the emission line maps--------------
-            fit_results, spatial_header = read_line_maps_fits(args.maps_fits_file)
-            wcs = pywcs.WCS(spatial_header)
+        try:
+            # ---------measuring the various quantitites--------
+            if not os.path.exists(args.quants_fits_file) or args.clobber:
+                # -----------read in the emission line maps--------------
+                fit_results, spatial_header = read_line_maps_fits(args.maps_fits_file)
+                wcs = pywcs.WCS(spatial_header)
 
-            args.available_lines = list(fit_results.keys())
-            if 'H-alpha' not in args.available_lines:
-                print(f'ID {args.id} (z={args.z:.2f}) does not have H-alpha, so skipping it..')
-                continue
-            if 'H-beta' not in args.available_lines:
-                print(f'ID {args.id} (z={args.z:.2f}) does not have H-beta, so skipping it..')
-                continue
+                args.available_lines = list(fit_results.keys())
+                if 'H-alpha' not in args.available_lines:
+                    print(f'ID {args.id} (z={args.z:.2f}) does not have H-alpha, so skipping it..')
+                    continue
+                if 'H-beta' not in args.available_lines:
+                    print(f'ID {args.id} (z={args.z:.2f}) does not have H-beta, so skipping it..')
+                    continue
 
-            args.EB_V_map, args.EB_V_int = get_EB_V(fit_results, args)
+                args.EB_V_map, args.EB_V_int = get_EB_V(fit_results, args)
 
-            # -----------computing various quantities--------------
-            quant_maps = compute_quant_maps(fit_results, args)
+                # -----------computing various quantities--------------
+                quant_maps = compute_quant_maps(fit_results, args)
 
-            # -----------save the quanttity maps in fits file-------------
-            save_quant_maps_fits(quant_maps, args.quants_fits_file, wcs, args)
-        else:
-            quant_maps, spatial_header = read_quant_maps_fits(args.quants_fits_file)
-        
-        # --------plot the qunatity maps-------------
-        if args.plot_metallicity:
-            fig, ax = plt.subplots(1, figsize=(8, 8), layout='constrained')
+                # -----------save the quanttity maps in fits file-------------
+                save_quant_maps_fits(quant_maps, args.quants_fits_file, wcs, args)
+            else:
+                quant_maps, spatial_header = read_quant_maps_fits(args.quants_fits_file)
             
-            ax = plot_quant_map(ax, 'logOH', quant_maps, args, cmap='cividis', takelog=False, vmin=logOH_min, vmax=logOH_max, hide_cbar=False)
-            
-            fig.text(0.1, 0.98, f'ID {args.id}', fontsize=args.fontsize, c='k', ha='left', va='top')
-            save_fig(fig, args.fig_dir, f'{args.id}_metallicity_{args.Zdiag}_maps.png', args)    
+            # --------plot the qunatity maps-------------
+            if args.plot_metallicity:
+                fig, ax = plt.subplots(1, figsize=(8, 8), layout='constrained')
+                
+                ax = plot_quant_map(ax, 'logOH', quant_maps, args, cmap='cividis', takelog=False, vmin=logOH_min, vmax=logOH_max, hide_cbar=False)
+                
+                fig.text(0.1, 0.98, f'ID {args.id}', fontsize=args.fontsize, c='k', ha='left', va='top')
+                save_fig(fig, args.fig_dir, f'{args.id}_metallicity_{args.Zdiag}_maps.png', args)    
 
-        if args.plot_met_sfr:
-            fig, axes = plt.subplots(1, 3, figsize=(10, 4.5))
-            fig.subplots_adjust(left=0.06, right=0.98, bottom=0.12, top=0.9, wspace=0.5)
-            
-            axes[0] = plot_quant_map(axes[0], 'logOH', quant_maps, args, cmap='cividis', takelog=False, vmin=logOH_min, vmax=logOH_max, hide_cbar=False)
-            axes[1] = plot_quant_map(axes[1], 'sfr', quant_maps, args, cmap='Blues', takelog=True, vmin=log_sfr_min, vmax=log_sfr_max, hide_yaxis=True, hide_cbar=False)
-            axes[2] = plot_met_sfr_corr(axes[2], quant_maps, args, color='salmon', log_sfr_min=log_sfr_min, log_sfr_max=log_sfr_max, logOH_min=logOH_min, logOH_max=logOH_max)
-            
-            fig.text(0.05, 0.95, f'ID {args.id}', fontsize=args.fontsize, c='k', ha='left', va='top')
-            save_fig(fig, args.fig_dir, f'{args.id}_metallicity_{args.Zdiag}_SFR_corr.png', args)    
+            if args.plot_met_sfr:
+                fig, axes = plt.subplots(1, 4, figsize=(13, 4.5))
+                fig.subplots_adjust(left=0.06, right=0.98, bottom=0.12, top=0.9, wspace=0.5)
+                
+                axes[0] = plot_quant_map(axes[0], 'logOH', quant_maps, args, cmap='cividis', takelog=False, vmin=logOH_min, vmax=logOH_max, hide_cbar=False)
+                axes[1] = plot_quant_map(axes[1], 'sfr', quant_maps, args, cmap='Blues', takelog=True, vmin=log_sfr_min, vmax=log_sfr_max, hide_yaxis=True, hide_cbar=False)
+                axes[3], linefit = plot_met_sfr_corr(axes[3], quant_maps, args, color='salmon', log_sfr_min=log_sfr_min, log_sfr_max=log_sfr_max, logOH_min=logOH_min, logOH_max=logOH_max)
 
-        print(f'\nCompleted ID {args.id} in {timedelta(seconds=(datetime.now() - start_time2).seconds)}, {len(df) - index - 1} to go!')
-        '''
+                # ----------getting Halpha kinematics from fit--------------
+                line, param = 'H-alpha', 'sigma'
+                fit_results, _ = read_line_maps_fits(args.maps_fits_file)
+                vdisp_map = fit_results[line][param]
+                axes[2] = plot_2D_map(vdisp_map, axes[2], r'$\sigma_{\rm vel}$ (km/s)', args, cmap='plasma', takelog=False, vmin=0, vmax=100, hide_xaxis=False, hide_yaxis=True, hide_cbar=False)
+                
+                # ---------cutting to only the relevant area of th evdisp map-----------
+                ny, nx = vdisp_map.shape
+                cen_y, cen_x = ny // 2, nx // 2
+                npix = int(np.ceil(args.upto_pix))
+                vdisp_map_cut = vdisp_map[cen_y - npix : cen_y + npix + 1, cen_x - npix : cen_x + npix + 1]
+                percentiles = np.nanpercentile(vdisp_map_cut.flatten(), [50, 16, 84])
+                vdisp_stats = {'vdisp_mean':np.nanmean(vdisp_map_cut), 'vdisp_50':percentiles[0], 'vdisp_16':percentiles[1], 'vdisp_84':percentiles[2]}
+
+                fig.text(0.05, 0.95, f'ID {args.id}', fontsize=args.fontsize, c='k', ha='left', va='top')
+                save_fig(fig, args.fig_dir, f'{args.id}_metallicity_{args.Zdiag}_SFR_corr.png', args) 
+
+                # -------appending line fit to output dataframe-----------
+                if args.do_all_obj:
+                    obj = obj.to_dict()
+                    obj.update({'logZ_logSFR_slope': linefit[0].n, 'logZ_logSFR_slope_u': linefit[0].s, 'logZ_logSFR_cen': linefit[1].n, 'logZ_logSFR_cen_u': linefit[1].s})
+                    obj.update(vdisp_stats)
+                    output_rows_list.append(obj)
+
+            print(f'\nCompleted ID {args.id} in {timedelta(seconds=(datetime.now() - start_time2).seconds)}, {len(df) - index - 1} to go!')
+              
         except Exception as e:
             print(f'Could not make plots for ID {args.id} because {e}')
             pass
-        '''
+        
+    # ------------writing out resulting dataframe-----------------
+    if args.do_all_obj and args.plot_met_sfr:
+        df_out = pd.DataFrame(output_rows_list)
+
+        # --------computing tmix---------
+        A, alpha = 2.5e-4, 1.5
+        beta = 1 - 1/alpha
+        B = A ** (1 / alpha)
+        log_slope = unp.uarray(df_out['logZ_logSFR_slope'], df_out['logZ_logSFR_slope_u'])
+        df_out['pix_area'] = msa_pix_size_arcsec / df_out['redshift'].apply(lambda x: cosmo.arcsec_per_kpc_proper(x).value) # converting arcsec to kpc
+        Sigma = df_out['sfr'] / df_out['pix_area']
+        t_mix = log_slope / (B * (Sigma ** beta) * (beta + log_slope)) # in yr
+        #t_mix = unp.log10(t_mix)
+        df_out['t_mix'] = unp.nominal_values(t_mix)
+        df_out['t_mix_u'] = unp.std_devs(t_mix)
+
+        # --------saving dataframe----------
+        df_out.to_csv(Z_SFR_slope_file, index=None)
+       
     print(f'Completed in {timedelta(seconds=(datetime.now() - start_time).seconds)}')
