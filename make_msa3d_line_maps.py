@@ -6,6 +6,7 @@
     Example: run make_msa3d_line_maps.py --do_all_obj --tie_vdisp
              run make_msa3d_line_maps.py --id 2145 --plot_line_flux_maps --save_linefit_plot --ncores 4
              run make_msa3d_line_maps.py --id 2145 --plot_line_quant_maps
+             run make_msa3d_line_maps.py --id 2145 --plot_rgb
              run make_msa3d_line_maps.py --id 2145 --debug_linefit 15,12
              run make_msa3d_line_maps.py --do_all_obj --save_linefit_plot --plot_line_flux_maps --plot_line_quant_maps --ncores 6
 '''
@@ -543,7 +544,7 @@ def plot_line_flux_maps(fit_results, args):
             snrmap = fluxmap / errmap
             axes_snr[row, col] = plot_2D_map(snrmap, axes_snr[row, col], f'{available_lines[index]}: SNR', args, cmap=cmap, takelog=False, vmin=cmin_snr, vmax=cmax_snr, hide_xaxis=row < nrow - 1, hide_yaxis=col > 0)
 
-   # --------common colorbar------------------
+    # --------common colorbar------------------
     fig = make_colorbar_top(fig, axes, f'ID {args.id}: Log flux (ergs/s/cm^2)' if show_log else f'ID {args.id}: Flux (ergs/s/cm^2)', cmap, cmin, cmax, ncbins, args.fontsize, aspect=60)
     if args.plot_snr: fig_snr = make_colorbar_top(fig_snr, axes_snr, f'{args.id}: SNR', cmap, cmin_snr, cmax_snr, ncbins, args.fontsize, aspect=60)
 
@@ -600,6 +601,59 @@ def plot_line_quant_maps(fit_results, line, args):
     if args.plot_snr: save_fig(fig_snr, args.fig_dir, Path(str(figname).replace('maps', 'snr')), args)
 
     return fig
+
+# --------------------------------------------------------------------------------------------------------------------
+def compute_rgb(fit_results, args, rlines='SII-6717,SII-6730', glines='H-alpha', blines='OIII-5007'):
+    '''
+    Computes the RGB image using the given r, g and b lines
+    Returns the axis handle
+    '''
+    available_lines = list(fit_results.keys())
+    # ------------get RGB lines-----------------------
+    image_arr = []
+    for lines in [rlines, glines, blines]:
+        images = []
+        for line in lines.split(','):
+            if line not in available_lines: return line
+            line_map, _  = get_emission_line_map(line, fit_results, args, log_flux_min=-21, log_flux_max=-18, dered=False)
+            images.append(unp.nominal_values(line_map.data))
+        img = np.sum(np.array(images), axis=0)
+        image_arr.append(img)
+
+    # -------create RGB image---------
+    pctl, maximum = 99.9, 0.
+    for img in image_arr:
+        val = np.nanpercentile(img, pctl)
+        if val > maximum: maximum = val
+
+    rgb_image = make_rgb(image_arr[0], image_arr[1], image_arr[2], interval=ManualInterval(vmin=0, vmax=maximum), stretch=SqrtStretch())
+
+    return rgb_image
+
+# --------------------------------------------------------------------------------------------------------------------
+def plot_rgb(rgb_image, args, given_ax=None):
+    '''
+    Plots the RGB image using the given r, g and b lines
+    Returns the axis handle
+    '''
+    if given_ax is None: fig, ax = plt.subplots(1, figsize=(4, 4), layout='constrained')
+    else: ax = given_ax
+    ax.set_facecolor('k')
+    extent = (-args.upto_arcsec, args.upto_arcsec, -args.upto_arcsec, args.upto_arcsec)
+
+    p = ax.imshow(rgb_image, origin='lower', extent=extent, alpha=1)
+    
+    # -----------plotting rectanlge correpsonding to integrated measurent area-------------
+    ax.scatter(0, 0, marker='x', s=10, c='grey')
+    ax.set_aspect('equal') 
+    if given_ax is None: ax = annotate_axes(ax, 'Offset (arcsec)', 'Offset (arcsec)', fontsize=args.fontsize, label=f'{args.id}')
+
+    # ---------saving figures-------------------
+    if given_ax is None:
+        figname = f'{args.id}_rgb{tie_vdisp_text}.png'
+        save_fig(fig, args.fig_dir, figname, args)    
+
+    return ax
 
 # --------------------------------------------------------------------------------------------------------------------
 def read_line_maps_fits(filename):
@@ -707,6 +761,14 @@ if __name__ == "__main__":
                 fig = plot_line_quant_maps(fit_results, line, args)
             else:
                 print(f'{line} is not available for object {args.id}')
+        if args.plot_rgb:
+            rlines, glines, blines = 'SII-6717,SII-6730', 'H-alpha', 'OIII-5007'
+            rgb_image = compute_rgb(fit_results, args, rlines=rlines, glines=glines, blines=blines)
+            if type(rgb_image) == str:
+                print(f'\nCannot compute RGB with {rlines}, {glines} and {blines} because {rgb_image} does not exist for this object; try with a different line.')
+            else:
+                rgb_image = cut_2Dmap(rgb_image, args.upto_pix)
+                ax = plot_rgb(rgb_image, args)
 
         print(f'\nCompleted ID {args.id} in {timedelta(seconds=(datetime.now() - start_time2).seconds)}, {len(df) - index - 1} to go!')
    

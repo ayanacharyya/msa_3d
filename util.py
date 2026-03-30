@@ -66,6 +66,7 @@ def parse_args():
     parser.add_argument('--plot_line_quant_maps', dest='plot_line_quant_maps', action='store_true', default=False, help='Plot the line flux and kinematic maps for a given galaxy and given line? Default is no.')
     parser.add_argument('--plot_ratio_maps', dest='plot_ratio_maps', action='store_true', default=False, help='Plot the line ratio maps for a given galaxy? Default is no.')
     parser.add_argument('--plot_snr', dest='plot_snr', action='store_true', default=False, help='Plot the SNR map for a given galaxy? Default is no.')
+    parser.add_argument('--plot_rgb', dest='plot_rgb', action='store_true', default=False, help='Plot the RGB image for a given galaxy based on emission line maps? Default is no.')
 
     # ------- args added for make_metallicity_sfr_maps.py ------------------------------
     parser.add_argument('--upto_kpc', metavar='upto_kpc', type=float, action='store', default=5, help='Radius in kpc within which integrated quantitites would be measured, and radial fits would be performed; default is 5')
@@ -463,13 +464,13 @@ class smart_dict(dict):
         return key
 
 # --------------------------------------------------------------------------------------------------------------------
-def annotate_axes(ax, xlabel, ylabel, args=None, fontsize=10, fontfactor=1, label='', clabel='', hide_xaxis=False, hide_yaxis=False, hide_cbar=True, p=None, hide_cbar_ticks=False, cticks_integer=True):
+def annotate_axes(ax, xlabel, ylabel, args=None, fontsize=10, fontfactor=1, label='', clabel='', hide_xaxis=False, hide_yaxis=False, hide_cbar=True, p=None, hide_cbar_ticks=False, cticks_integer=True, label_color='k', bbox=True):
     '''
     Annotates the axis of a given 2D image
     Returns the axis handle
     '''
     if args is not None: fontsize, fontfactor = args.fontsize, args.fontfactor
-    ax.text(0.05, 0.9, label, c='k', fontsize=fontsize/fontfactor, ha='left', va='top', bbox=dict(facecolor='white', edgecolor='black', alpha=0.9), transform=ax.transAxes)
+    ax.text(0.05, 0.9, label, c=label_color, fontsize=fontsize/fontfactor, ha='left', va='top', bbox=dict(facecolor='white', edgecolor='black', alpha=0.9) if bbox else None, transform=ax.transAxes)
 
     ax.xaxis.set_major_locator(ticker.MaxNLocator(nbins=3, prune='both'))
     ax.xaxis.set_minor_locator(ticker.AutoMinorLocator(4))
@@ -646,3 +647,55 @@ def get_dereddened_flux(obs_flux_map, wavelength, EB_V, inAngstrom=True):
     return flux_corrected_map
 # --------------------------------------------------------------------------------------------------------------------
 
+# --------------------------------------------------------------------------------------------------------------------
+def make_rgb(im_r, im_g, im_b, interval=None, stretch=None):
+    """
+    This function was borrowed from ChatGPT
+    Make an RGB image from three input images with customizable interval and stretch.
+    
+    Parameters
+    ----------
+    im_r, im_g, im_b : array-like
+        Input images for red, green, blue channels.
+    interval : instance of astropy.visualization.Interval, optional
+        Interval object to define min/max scaling (e.g., ManualInterval, MinMaxInterval).
+    stretch : instance of astropy.visualization.Stretch, optional
+        Stretch object to define stretching function (e.g., LinearStretch, LogStretch, SqrtStretch).
+    
+    Returns
+    -------
+    rgb : ndarray
+        (M, N, 3) RGB image with values scaled between 0 and 1.
+    """
+    # Default behavior if interval or stretch not provided
+    if interval is None:
+        interval = MinMaxInterval()
+    if stretch is None:
+        stretch = LinearStretch()
+
+    def normalize(im):
+        vmin, vmax = interval.get_limits(im)
+        im_scaled = (im - vmin) / (vmax - vmin)
+        im_scaled = np.clip(im_scaled, 0, 1)
+        return stretch(im_scaled)
+
+    r = normalize(im_r)
+    g = normalize(im_g)
+    b = normalize(im_b)
+
+    rgb = np.stack([r, g, b], axis=-1)
+    rgb = np.clip(rgb, 0, 1)
+    return rgb
+
+# --------------------------------------------------------------------------------------------------------------------
+def cut_2Dmap(map, upto_pix):
+    '''
+    Return 2D cutout of a given 2D image within +/- upto_pix pixels around the center
+    '''
+    ny, nx = map.shape[:2]
+    cen_y, cen_x = ny // 2, nx // 2
+    npix = int(np.ceil(upto_pix))
+    if len(map.shape) == 3: map_cut = map[cen_y - npix : cen_y + npix + 1, cen_x - npix : cen_x + npix + 1, :]
+    else: map_cut = map[cen_y - npix : cen_y + npix + 1, cen_x - npix : cen_x + npix + 1]
+
+    return map_cut

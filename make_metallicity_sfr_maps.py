@@ -11,7 +11,7 @@
 
 from header import *
 from util import *
-from make_msa3d_line_maps import read_line_maps_fits, read_msa3d_catalog, plot_2D_map, get_emission_line_map
+from make_msa3d_line_maps import read_line_maps_fits, read_msa3d_catalog, plot_2D_map, get_emission_line_map, compute_rgb
 
 start_time = datetime.now()
 
@@ -873,7 +873,6 @@ def get_quant_from_quant_maps(quant, quant_maps):
    
 # --------------------------------------------------------------------------------------------------------------------
 
-
 # --------------------------------------------------------------------------------------------------------------------
 if __name__ == "__main__":
     args = parse_args()
@@ -951,28 +950,34 @@ if __name__ == "__main__":
                 save_fig(fig, args.fig_dir, f'{args.id}_metallicity_{args.Zdiag}_maps.png', args)    
 
             if args.plot_met_sfr:
-                fig, axes = plt.subplots(1, 4, figsize=(13, 4.5))
-                fig.subplots_adjust(left=0.06, right=0.98, bottom=0.12, top=0.9, wspace=0.5)
+                fig, axes = plt.subplots(1, 5, figsize=(14, 4.5))
+                fig.subplots_adjust(left=0.06, right=0.98, bottom=0.12, top=0.98, wspace=0.5)
                 
-                axes[0] = plot_quant_map(axes[0], 'logOH', quant_maps, args, cmap='cividis', takelog=False, vmin=logOH_min, vmax=logOH_max, hide_cbar=False)
-                axes[1] = plot_quant_map(axes[1], 'sfr', quant_maps, args, cmap='Blues', takelog=True, vmin=log_sfr_min, vmax=log_sfr_max, hide_yaxis=True, hide_cbar=False)
-                axes[3], linefit = plot_met_sfr_corr(axes[3], quant_maps, args, color='salmon', log_sfr_min=log_sfr_min, log_sfr_max=log_sfr_max, logOH_min=logOH_min, logOH_max=logOH_max)
+                # -----------gettign RGB image------------------
+                fit_results, _ = read_line_maps_fits(args.maps_fits_file)
+                rgb_image = compute_rgb(fit_results, args, rlines='SII-6717,SII-6730', glines='H-alpha', blines='OIII-5007')
+                if type(rgb_image) == str:
+                    axes[0] = plot_2D_map(np.zeros((msa_npix_x, msa_npix_y)) * np.nan, axes[0], f'{args.id}: {rgb_image}\nnot available', args, cmap='plasma', takelog=False)
+                else:
+                    axes[0] = plot_2D_map(rgb_image, axes[0], f'{args.id}: RGB', args, cmap='plasma', takelog=False)
 
+                # -----------gettign logOH and SFR maps------------------
+                axes[1] = plot_quant_map(axes[1], 'logOH', quant_maps, args, cmap='cividis', takelog=False, vmin=logOH_min, vmax=logOH_max, hide_yaxis=True, hide_cbar=False)
+                axes[2] = plot_quant_map(axes[2], 'sfr', quant_maps, args, cmap='Blues', takelog=True, vmin=log_sfr_min, vmax=log_sfr_max, hide_yaxis=True, hide_cbar=False)
+                
                 # ----------getting Halpha kinematics from fit--------------
                 line, param = 'H-alpha', 'sigma'
                 fit_results, _ = read_line_maps_fits(args.maps_fits_file)
                 vdisp_map = fit_results[line][param]
-                axes[2] = plot_2D_map(vdisp_map, axes[2], r'$\sigma_{\rm vel}$ (km/s)', args, cmap='plasma', takelog=False, vmin=0, vmax=100, hide_xaxis=False, hide_yaxis=True, hide_cbar=False)
+                axes[3] = plot_2D_map(vdisp_map, axes[3], r'$\sigma_{\rm vel}$ (km/s)', args, cmap='plasma', takelog=False, vmin=0, vmax=100, hide_xaxis=False, hide_yaxis=True, hide_cbar=False)
                 
                 # ---------cutting to only the relevant area of th evdisp map-----------
-                ny, nx = vdisp_map.shape
-                cen_y, cen_x = ny // 2, nx // 2
-                npix = int(np.ceil(args.upto_pix))
-                vdisp_map_cut = vdisp_map[cen_y - npix : cen_y + npix + 1, cen_x - npix : cen_x + npix + 1]
+                vdisp_map_cut = cut_2Dmap(vdisp_map, args.upto_pix)
                 percentiles = np.nanpercentile(vdisp_map_cut.flatten(), [50, 16, 84])
                 vdisp_stats = {'vdisp_mean':np.nanmean(vdisp_map_cut), 'vdisp_50':percentiles[0], 'vdisp_16':percentiles[1], 'vdisp_84':percentiles[2]}
 
-                fig.text(0.05, 0.95, f'ID {args.id}', fontsize=args.fontsize, c='k', ha='left', va='top')
+                # ------plotting logOH vs SFR----------------
+                axes[-1], linefit = plot_met_sfr_corr(axes[-1], quant_maps, args, color='salmon', log_sfr_min=log_sfr_min, log_sfr_max=log_sfr_max, logOH_min=logOH_min, logOH_max=logOH_max)
                 save_fig(fig, args.fig_dir, f'{args.id}_metallicity_{args.Zdiag}_SFR_corr.png', args) 
 
                 # -------appending line fit to output dataframe-----------
@@ -983,7 +988,7 @@ if __name__ == "__main__":
                     output_rows_list.append(obj)
 
             print(f'\nCompleted ID {args.id} in {timedelta(seconds=(datetime.now() - start_time2).seconds)}, {len(df) - index - 1} to go!')
-              
+         
         except Exception as e:
             print(f'Could not make plots for ID {args.id} because {e}')
             pass

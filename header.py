@@ -46,6 +46,7 @@ from astropy.io import fits
 from astropy.cosmology import Planck18
 from astropy.cosmology import FlatLambdaCDM
 from astropy.constants import c
+from astropy.visualization import make_lupton_rgb, MinMaxInterval, ManualInterval, LogStretch, LinearStretch, SqrtStretch
 
 from uncertainties import unumpy as unp
 from uncertainties import ufloat
