@@ -894,7 +894,7 @@ if __name__ == "__main__":
     catalog_file = args.input_dir / 'redshifts.dat'
     tie_vdisp_text = '_tie_vdisp' if args.tie_vdisp else ''
 
-    Z_SFR_slope_file = args.output_dir / 'catalogs' / 'Z_SFR_slopes.csv'
+    Z_SFR_slope_file = args.output_dir / 'catalogs' / f'Z_{args.Zdiag}_SFR_slopes{tie_vdisp_text}.csv'
 
     # ----------------reading in catalog---------------------
     df = read_msa3d_catalog(catalog_file)
@@ -1005,6 +1005,8 @@ if __name__ == "__main__":
         df_out['t_mix_u'] = unp.std_devs(t_mix)
 
         # --------saving dataframe----------
+        df_out['log_sfr'] = np.log10(df_out['sfr'])
+        df_out = df_out.rename(columns={'mass': 'log_mass'})
         df_out.to_csv(Z_SFR_slope_file, index=None)
        
     print(f'Completed in {timedelta(seconds=(datetime.now() - start_time).seconds)}')
