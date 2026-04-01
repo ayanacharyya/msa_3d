@@ -14,6 +14,9 @@
 from header import *
 from util import *
 
+if not hasattr(sys.modules['__main__'], '__spec__'):
+    sys.modules['__main__'].__spec__ = None # this is to prevent the AttributeError: module '__main__' has no attribute '__spec__'
+
 start_time = datetime.now()
 
 # --------------------------------------------------------------------------------------------------------------------
@@ -114,6 +117,7 @@ def linefit_cube(cube, wavelengths, args, cube_err=None, flam_col='flam', flam_u
         fit_results[label] = {p: np.full((np.shape(cube)[1], np.shape(cube)[2]), np.nan) for p in params}
 
     start_time3 = datetime.now()
+    
     # ----------parallelising--------------
     if args.ncores > 1:
         spaxel_indices = [(x, y) for y in range(ny) for x in range(nx)]
@@ -301,7 +305,7 @@ def linefit_spectrum(df_spec, df_lines, line_groups, args, i='X', j='X', flam_co
             return global_gaussian_model(t_x, *params, rest_waves=g_waves, tie_vdisp=args.tie_vdisp)
 
         try:
-            popt, pcov = curve_fit(group_model, df_chunk[wave_col], df_chunk[contsub_col], p0=p0, sigma=df_chunk[flam_u_col], bounds=(lbounds, ubounds))
+            popt, pcov = curve_fit(group_model, df_chunk[wave_col], df_chunk[contsub_col], p0=p0, sigma=df_chunk[flam_u_col], bounds=(lbounds, ubounds), maxfev=5000)
             perr = np.sqrt(np.diag(pcov))
             
             # ------mapping parameters back to results------------
@@ -405,6 +409,7 @@ def get_emission_line_map(line, fit_results, args, log_flux_min=-21, log_flux_ma
     Retrieve the emission map for a given line from the given dictionary of emission lines
     Returns the 2D line map and the corresponding 2D uncertainty map
     '''
+    if args.nodered: dered = False
     # ---------getting the spatillay resolved flux---------------
     line_map = fit_results[line]['flux']
     line_map_err = fit_results[line]['flux_err']

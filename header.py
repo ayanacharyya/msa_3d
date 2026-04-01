@@ -35,6 +35,7 @@ from scipy.odr import ODR, Model, RealData
 
 from os import PathLike
 from multiprocessing import Pool, cpu_count
+#from multiprocess import Pool, cpu_count
 from functools import partial
 
 from astropy.table import Table, join
