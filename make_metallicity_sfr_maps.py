@@ -4,7 +4,7 @@
     Author : Ayan
     Created: 06-02-26
     Example: run make_metallicity_sfr_maps.py --do_all_obj --Zdiag NB --plot_met_sfr --snr_cut 3
-             run make_metallicity_sfr_maps.py --id 2145 --Zdiag NB --plot_metallicity --snr_cut 3
+             run make_metallicity_sfr_maps.py --id 2145 --Zdiag NB --plot_metallicity --snr_cut 3 --debug_NB
              run make_metallicity_sfr_maps.py --id 2145 --Zdiag N2 --plot_met_sfr --snr_cut 3
              run make_metallicity_sfr_maps.py --id 2145 --Zdiag R3 --Zbranch low --use_C25 --plot_met_sfr --snr_cut 3
 '''
@@ -443,14 +443,43 @@ def compute_Z_NB(line_label_array, line_waves_array, line_flux_array, args):
     if len(unique_IDs_array) > 60: print(f'This might take ~{int(len(unique_IDs_array) / 60)} min')
 
     # -----making a "net" mask array and separating out the line fluxes form the input unumpy arrays---------
+    net_line_mask = np.zeros(np.shape(line_flux_array[0]), dtype=bool)
+    net_neg_err_mask = np.zeros(np.shape(line_flux_array[0]), dtype=bool)
     net_mask = np.zeros(np.shape(line_flux_array[0]), dtype=bool)
     obs_flux_array, obs_err_array = [], []
 
+    # --------------------debug input flux maps--------------------
+    if args.debug_NB and len(map_shape) > 1:
+        args.fontsize = 10
+        nrow, ncol = 4, len(line_label_array)
+        log_flux_min, log_flux_max, flux_cmap = -21, -18, 'cividis'
+        snr_min, snr_max, snr_cmap = 0, 20, 'rainbow'
+        mask_cmap = 'Greys'
+        fig, axes = plt.subplots(nrow, ncol, layout='constrained', figsize=(3 + ncol * 0.8, 7), sharex=True, sharey=True)
+
     for index in range(len(line_flux_array)):
         if np.ma.isMaskedArray(line_flux_array[index]):
-            net_mask = net_mask | line_flux_array[index].mask
-            obs_flux_array.append(unp.nominal_values(line_flux_array[index].data).flatten())
-            obs_err_array.append(unp.std_devs(line_flux_array[index].data).flatten())
+            this_line_flux = line_flux_array[index].data
+            this_line_mask = line_flux_array[index].mask
+            net_line_mask = net_line_mask & this_line_mask
+
+            neg_err_mask = unp.std_devs(this_line_flux) <= 0
+            net_neg_err_mask = net_neg_err_mask | neg_err_mask
+
+            net_mask = net_neg_err_mask | net_line_mask
+
+            if args.debug_NB and len(map_shape) > 1:
+                row = index // ncol
+                col = index % ncol
+                this_line_snr = unp.nominal_values(this_line_flux) / unp.std_devs(this_line_flux)
+
+                axes[0][index] = plot_2D_map(unp.nominal_values(this_line_flux), axes[0][index], f'{line_label_array[index]}\nflux', args, cmap=flux_cmap, takelog=True, vmin=log_flux_min, vmax=log_flux_max, hide_xaxis=row < nrow - 1, hide_yaxis=col > 0)
+                axes[1][index] = plot_2D_map(this_line_snr, axes[1][index], f'snr', args, cmap=snr_cmap, takelog=False, vmin=snr_min, vmax=snr_max, hide_xaxis=row < nrow - 1, hide_yaxis=col > 0)
+                axes[2][index] = plot_2D_map(this_line_mask, axes[2][index], f'mask', args, cmap=mask_cmap, takelog=False, hide_xaxis=row < nrow - 1, hide_yaxis=col > 0)
+                axes[3][index] = plot_2D_map(net_mask, axes[3][index], f'net mask', args, cmap=mask_cmap, takelog=False, hide_xaxis=row < nrow - 1, hide_yaxis=col > 0)
+
+            obs_flux_array.append(unp.nominal_values(this_line_flux).flatten())
+            obs_err_array.append(unp.std_devs(this_line_flux).flatten())
         else:
             obs_flux_array.append(unp.nominal_values(line_flux_array[index]).flatten())
             obs_err_array.append(unp.std_devs(line_flux_array[index]).flatten())
@@ -458,6 +487,14 @@ def compute_Z_NB(line_label_array, line_waves_array, line_flux_array, args):
     obs_flux_array = np.array(obs_flux_array)
     obs_err_array = np.array(obs_err_array)
     net_mask_array = net_mask.flatten()
+
+    # --------------------debug input flux maps--------------------
+    if args.debug_NB and len(map_shape) > 1:
+        fig = make_colorbar_top(fig, axes, f'ID {args.id}: Log flux (ergs/s/cm^2)', flux_cmap, log_flux_min, log_flux_max, 6, args.fontsize, aspect=60, loc='top')
+        fig = make_colorbar_top(fig, axes, f'SNR', snr_cmap, snr_min, snr_max, 6, args.fontsize, aspect=60, loc='bottom')
+        plt.show(block=False)
+        print(f'\nDeb489: --debug_NB mode: total {(~net_mask).sum()} pixels out of {np.shape(net_mask)[0] * np.shape(net_mask)[1]} available for NB fitting, after all masking..\n')
+        #sys.exit(f'\nExiting here because it is being run in --debug_NB mode.')
 
     # -----loading the NB HII region model grid---------
     NB_Model_HII = NB_Model('HII', line_list=line_label_array)
@@ -919,7 +956,7 @@ if __name__ == "__main__":
             # ---------measuring the various quantitites--------
             if not os.path.exists(args.quants_fits_file) or args.clobber:
                 # -----------read in the emission line maps--------------
-                fit_results, spatial_header = read_line_maps_fits(args.maps_fits_file)
+                fit_results, spatial_header = read_line_maps_fits(args.maps_fits_file, args)
                 wcs = pywcs.WCS(spatial_header)
 
                 args.available_lines = list(fit_results.keys())
@@ -954,7 +991,7 @@ if __name__ == "__main__":
                 fig.subplots_adjust(left=0.06, right=0.98, bottom=0.12, top=0.98, wspace=0.5)
                 
                 # -----------gettign RGB image------------------
-                fit_results, _ = read_line_maps_fits(args.maps_fits_file)
+                fit_results, _ = read_line_maps_fits(args.maps_fits_file, args)
                 rgb_image = compute_rgb(fit_results, args, rlines='SII-6717,SII-6730', glines='H-alpha', blines='OIII-5007')
                 if type(rgb_image) == str:
                     axes[0] = plot_2D_map(np.zeros((msa_npix_x, msa_npix_y)) * np.nan, axes[0], f'{args.id}: {rgb_image}\nnot available', args, cmap='plasma', takelog=False)
@@ -967,7 +1004,7 @@ if __name__ == "__main__":
                 
                 # ----------getting Halpha kinematics from fit--------------
                 line, param = 'H-alpha', 'sigma'
-                fit_results, _ = read_line_maps_fits(args.maps_fits_file)
+                fit_results, _ = read_line_maps_fits(args.maps_fits_file, args)
                 vdisp_map = fit_results[line][param]
                 axes[3] = plot_2D_map(vdisp_map, axes[3], r'$\sigma_{\rm vel}$ (km/s)', args, cmap='plasma', takelog=False, vmin=0, vmax=100, hide_xaxis=False, hide_yaxis=True, hide_cbar=False)
                 

@@ -93,6 +93,7 @@ def parse_args():
     parser.add_argument('--AGN_diag', metavar='AGN_diag', type=str, action='store', default='None', help='Which AGN-SF BPT-like diagnostic to use (choose between VO87,H21,O2O3,O2Hb,Ne3O2? Default is None')
     parser.add_argument('--mask_agn', dest='mask_agn', action='store_true', default=False, help='Mask out the AGN-dominated pixels from all metallicity estimates? Default is no.')
 
+    parser.add_argument('--debug_NB', dest='debug_NB', action='store_true', default=False, help='Debug the metallicity estimation using NebulaBayes? Default is no.')
     parser.add_argument('--debug_Zsfr', dest='debug_Zsfr', action='store_true', default=False, help='Debug the metallicity-sfr plots? Default is no.')
     parser.add_argument('--fit_correlation', dest='fit_correlation', action='store_true', default=False, help='Fit a slope between x and y? Default is no.')
 
@@ -527,7 +528,7 @@ def save_fig(fig, fig_dir, figname, args, silent=False):
     return
 
 # --------------------------------------------------------------------------------------------------------------------
-def make_colorbar_top(fig, axes, clabel, cmap, cmin, cmax, ncbins, fontsize, aspect=60):
+def make_colorbar_top(fig, axes, clabel, cmap, cmin, cmax, ncbins, fontsize, aspect=60, loc='top'):
     '''
     Creates a shared colorbar for the whole figure, at the top of the figure
     Returns figure handle
@@ -535,7 +536,7 @@ def make_colorbar_top(fig, axes, clabel, cmap, cmin, cmax, ncbins, fontsize, asp
     norm = mplcolors.Normalize(vmin=cmin, vmax=cmax)
     sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
 
-    cbar = fig.colorbar(sm, ax=axes, location='top', shrink=0.95, pad=0.01, aspect=aspect)
+    cbar = fig.colorbar(sm, ax=axes, location=loc, shrink=0.95, pad=0.01, aspect=aspect)
     cbar.set_label(clabel, fontsize=fontsize, labelpad=5)    
     cbar.ax.tick_params(labelsize=fontsize)
     cbar.locator = ticker.MaxNLocator(integer=False, nbins=ncbins)#, prune='both')

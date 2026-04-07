@@ -710,7 +710,7 @@ def plot_rgb(rgb_image, args, given_ax=None):
     return ax
 
 # --------------------------------------------------------------------------------------------------------------------
-def read_line_maps_fits(filename):
+def read_line_maps_fits(filename, args):
     '''
     Reads a multi-extension FITS file and reconstructs the fit_results dictionary.
     Returns:
@@ -807,7 +807,7 @@ if __name__ == "__main__":
             # -----------save the emission maps in fits file-------------
             save_line_maps_fits(fit_results, args.maps_fits_file, wcs, args)
         else:
-            fit_results, spatial_header = read_line_maps_fits(args.maps_fits_file)
+            fit_results, spatial_header = read_line_maps_fits(args.maps_fits_file, args)
         
         # --------plot the emission line maps-------------
         if args.plot_line_flux_maps:

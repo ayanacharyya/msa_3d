@@ -19,8 +19,15 @@ def make_plot(xcol, ycol, df, ax, args, colorcol=None, cmap='plasma', color='cor
     '''
     label_dict = {'redshift':'Redshift', 'log_mass':'Log stellar mass', 'log_sfr':'Log SFR', 'Zgrad_kpc':r'$\nabla_r$Z', 'Zgrad_re':r'$\nabla_r$Z', 'logZ_logSFR_slope':r'$\nabla_r$Z - $\Sigma_{\rm SFR}$ slope', 'vdisp_mean':r'Mean $\sigma_{\rm disp}$', 'vdisp_50':r'Median $\sigma_{\rm disp}$', 't_mix':r'$t_{\rm mix}$'}
     unit_dict = {'redshift':'', 'log_mass':r'M$_{\odot}$', 'log_sfr':r'M$_{\odot}$/yr', 'Zgrad_kpc':'dex/kpc', 'Zgrad_re':r'dex/r$_e$', 'logZ_logSFR_slope':'', 'vdisp_mean':'km/s', 'vdisp_50':'km/s', 't_mix':'yr'}
-    vmin_dict = {'redshift':0.9, 'log_mass':8.0, 'log_sfr':-4.0, 'Zgrad_kpc':-2, 'Zgrad_re':-2, 'logZ_logSFR_slope':-10, 'vdisp_mean':None, 'vdisp_50':None, 't_mix':0}
-    vmax_dict = {'redshift':1.9, 'log_mass':11.0, 'log_sfr':1.0, 'Zgrad_kpc':2, 'Zgrad_re':2, 'logZ_logSFR_slope':10, 'vdisp_mean':None, 'vdisp_50':None, 't_mix':300}
+
+    vmin_dict = {'redshift':0.9, 'log_mass':8.0, 'log_sfr':-4.0, 'Zgrad_kpc':-2, 'Zgrad_re':-2, 'logZ_logSFR_slope':-0.3, 'vdisp_mean':None, 'vdisp_50':None, 't_mix':0}
+    vmax_dict = {'redshift':1.9, 'log_mass':11.0, 'log_sfr':1.0, 'Zgrad_kpc':2, 'Zgrad_re':2, 'logZ_logSFR_slope':0.3, 'vdisp_mean':None, 'vdisp_50':None, 't_mix':300}
+
+    # vmin_dict = {'redshift':0.9, 'log_mass':8.0, 'log_sfr':-4.0, 'Zgrad_kpc':-2, 'Zgrad_re':-2, 'logZ_logSFR_slope':-0.3, 'vdisp_mean':None, 'vdisp_50':None, 't_mix':-70}
+    # vmax_dict = {'redshift':1.9, 'log_mass':11.0, 'log_sfr':1.0, 'Zgrad_kpc':2, 'Zgrad_re':2, 'logZ_logSFR_slope':0.4, 'vdisp_mean':None, 'vdisp_50':None, 't_mix':100}
+
+    # vmin_dict = {'redshift':0.9, 'log_mass':8.0, 'log_sfr':-4.0, 'Zgrad_kpc':None, 'Zgrad_re':None, 'logZ_logSFR_slope':None, 'vdisp_mean':None, 'vdisp_50':None, 't_mix':None}
+    # vmax_dict = {'redshift':1.9, 'log_mass':11.0, 'log_sfr':1.0, 'Zgrad_kpc':None, 'Zgrad_re':None, 'logZ_logSFR_slope':None, 'vdisp_mean':None, 'vdisp_50':None, 't_mix':None}
 
     p = ax.scatter(df[xcol], df[ycol], s=size, lw=1, ec='k', c=df[colorcol] if colorcol is not None else color)
 
@@ -51,7 +58,7 @@ if __name__ == "__main__":
 
     # -------make plots-----------
     fig, axes = plt.subplots(2, 2, figsize=(10, 6))
-    fig.subplots_adjust(left=0.08, right=0.92, bottom=0.12, top=0.98, wspace=0.5, hspace=0.3)
+    fig.subplots_adjust(left=0.1, right=0.90, bottom=0.12, top=0.98, wspace=0.6, hspace=0.3)
     axes = axes.flatten()
 
     axes[0] = make_plot('log_mass', 'logZ_logSFR_slope', df, axes[0], args, colorcol='redshift')
@@ -60,7 +67,7 @@ if __name__ == "__main__":
     axes[3] = make_plot('vdisp_50', 't_mix', df, axes[3], args, colorcol='log_mass')
 
     # ----------save figure---------------
-    figname = f'all_relations_Z_{args.Zdiag}_{tie_vdisp_text}.png'
+    figname = f'all_relations_Z_{args.Zdiag}{tie_vdisp_text}.png'
     save_fig(fig, args.fig_dir, figname, args)
 
     print(f'Completed in {timedelta(seconds=(datetime.now() - start_time).seconds)}')
