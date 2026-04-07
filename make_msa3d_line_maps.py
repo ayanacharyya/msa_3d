@@ -52,9 +52,10 @@ def get_ifu_cube(cube_fits_file):
     cube_err = hdul[2].data
 
     # -------chopping to a uniform pixel dimension--------
-    ny, nx = np.shape(cube)[1:]
-    cube = cube[:, int(ny/2 - msa_npix_y/2): int(ny/2 + msa_npix_y/2), int(nx/2 - msa_npix_x/2): int(nx/2 + msa_npix_x/2)]
-    cube_err = cube_err[:, int(ny/2 - msa_npix_y/2): int(ny/2 + msa_npix_y/2), int(nx/2 - msa_npix_x/2): int(nx/2 + msa_npix_x/2)]
+    if args.chop_fov:
+        ny, nx = np.shape(cube)[1:]
+        cube = cube[:, int(ny/2 - msa_npix_y/2): int(ny/2 + msa_npix_y/2), int(nx/2 - msa_npix_x/2): int(nx/2 + msa_npix_x/2)]
+        cube_err = cube_err[:, int(ny/2 - msa_npix_y/2): int(ny/2 + msa_npix_y/2), int(nx/2 - msa_npix_x/2): int(nx/2 + msa_npix_x/2)]
 
     # ----------getting the wavelength array----------
     header = hdul[0].header
@@ -77,12 +78,10 @@ def get_ifu_cube(cube_fits_file):
     cube = cube * factors[:, np.newaxis, np.newaxis] / constant_factor
     cube_err = cube_err * factors[:, np.newaxis, np.newaxis] / constant_factor
 
-
-
     return cube, cube_err, wavelengths, wcs, constant_factor
 
 # --------------------------------------------------------------------------------------------------------------------
-def linefit_cube(cube, wavelengths, args, cube_err=None, flam_col='flam', flam_u_col='flam_u', wave_col='rest_wave', label_col='labels', cont_col='cont', snr_thresh=1.5, flux_factor=1.):
+def linefit_cube(cube, wavelengths, args, cube_err=None, flam_col='flam', flam_u_col='flam_u', wave_col='rest_wave', label_col='labels', cont_col='cont', snr_thresh=1., flux_factor=1.):
     '''
     Runs spaxel-by-spaxel emission line fitting of the emission line list provided (as args.line_list)
     Accounts for the corresponding errorcube, if provided
@@ -112,7 +111,7 @@ def linefit_cube(cube, wavelengths, args, cube_err=None, flam_col='flam', flam_u
 
    # ---------initialising fit result dict-----------------
     fit_results = {}
-    params = ['flux', 'flux_err', 'vel', 'vel_err', 'sigma', 'sigma_err']
+    params = ['flux', 'flux_err', 'flux_snr', 'vel', 'vel_err', 'sigma', 'sigma_err']
     for label in df_lines[label_col]:
         fit_results[label] = {p: np.full((np.shape(cube)[1], np.shape(cube)[2]), np.nan) for p in params}
 
@@ -146,7 +145,7 @@ def linefit_cube(cube, wavelengths, args, cube_err=None, flam_col='flam', flam_u
                     
                 # ---------printing fit results and exiting, for debugging mode---------
                 if args.debug_linefit is not None:
-                    print(f'\n\t\tFit results for spaxel ({i},{i}) are:')
+                    print(f'\n\t\tFit results for spaxel ({i},{j}) are:')
 
                     df_fit = pd.DataFrame(columns=np.hstack(['line', params]))
                     for line in list(fit_results_spaxel.keys()):
@@ -168,7 +167,7 @@ def linefit_cube(cube, wavelengths, args, cube_err=None, flam_col='flam', flam_u
     return fit_results
 
 # --------------------------------------------------------------------------------------------------------------------
-def linefit_spaxel(coords, cube, cube_err, rest_wave_arr, df_lines, line_groups, args, flam_col='flam', flam_u_col='flam_u', wave_col='rest_wave', label_col='labels', cont_col='cont', snr_thresh=1.5, flux_factor=1.):
+def linefit_spaxel(coords, cube, cube_err, rest_wave_arr, df_lines, line_groups, args, flam_col='flam', flam_u_col='flam_u', wave_col='rest_wave', label_col='labels', cont_col='cont', snr_thresh=1., flux_factor=1.):
     '''
     Runs emission line fitting on one spectrum (spaxel) of the emission line wavelengths provided (df_lines)
     Accounts for the corresponding error spectrum, if provided
@@ -182,7 +181,7 @@ def linefit_spaxel(coords, cube, cube_err, rest_wave_arr, df_lines, line_groups,
 
    # ---------initialising fit result dict-----------------
     fit_results_spaxel = {}
-    params = ['flux', 'flux_err', 'vel', 'vel_err', 'sigma', 'sigma_err']
+    params = ['flux', 'flux_err', 'flux_snr', 'vel', 'vel_err', 'sigma', 'sigma_err']
     for label in df_lines[label_col]:
         fit_results_spaxel[label] = {p: np.nan for p in params}
     
@@ -252,7 +251,7 @@ def linefit_spectrum(df_spec, df_lines, line_groups, args, i='X', j='X', flam_co
     '''
     # ---------initialising fit result dict-----------------
     fit_results_spaxel = {}
-    params = ['flux', 'flux_err', 'vel', 'vel_err', 'sigma', 'sigma_err']
+    params = ['flux', 'flux_err', 'flux_snr', 'vel', 'vel_err', 'sigma', 'sigma_err']
     for label in df_lines[label_col]:
         fit_results_spaxel[label] = {p: np.nan for p in params}
 
@@ -276,37 +275,59 @@ def linefit_spectrum(df_spec, df_lines, line_groups, args, i='X', j='X', flam_co
         for line_wave in df_lines[wave_col]: ax.axvspan(line_wave - args.mask_window, line_wave + args.mask_window, color='gray', alpha=0.2)
 
      # -----------fitting different chunks of lines together---------------
-    for group in line_groups:
+    for index2, group in enumerate(line_groups):
         g_waves = [l[wave_col] for l in group]
         g_labels = [l[label_col] for l in group]
         
         # -------define local window for the group---------
         min_w, max_w = min(g_waves) - args.fit_padding, max(g_waves) + args.fit_padding
-        df_chunk = df_spec[(df_spec[wave_col] >= min_w) & (df_spec[wave_col] <= max_w)]
+        df_chunk = df_spec[df_spec[wave_col].between(min_w, max_w)]
         if len(df_chunk) < 5: continue
 
         # -----------initialising the parameters-----------------------
-        amp_guess = np.max(df_chunk[contsub_col])
         sig_kmps_guess = 200. # km/s
         vel_guess = 100. # km/s
+        vel_bound = 500 # +/- km/s, used for both vel and v_sigma
 
+        # -----------setting up initial guesses and bounds for parameters common to the whole group----------
         if args.tie_vdisp: # Structure: [v_los, shared_sigma, amp1, amp2, ... ampN]
-            p0 = [vel_guess, sig_kmps_guess] + [amp_guess] * len(g_waves)
-            lbounds = [-500, 0.] + [0] * len(g_waves)
-            ubounds = [500, 500] + [np.inf] * len(g_waves)
-        
+            p0 = [vel_guess, sig_kmps_guess]
+            lbounds = [-vel_bound, 0.]
+            ubounds = [vel_bound, vel_bound]
         else: # Structure: [v_los, amp1, sig1, amp2, sig2, ... ampN, sigN]
-            p0 = [vel_guess] + [amp_guess, sig_kmps_guess] * len(g_waves)
-            lbounds = [-500] + [0, 0.] * len(g_waves)
-            ubounds = [500] + [np.inf, 500] * len(g_waves)
+            p0 = [vel_guess]
+            lbounds = [-vel_bound]
+            ubounds = [vel_bound]
+
+        # -----------setting up initial guesses and bounds for parameters for each line----------
+        for this_line_wave in g_waves:
+            this_df_chunk = df_chunk[df_chunk[wave_col].between(this_line_wave - args.mask_window, this_line_wave + args.mask_window)]
+            if len(this_df_chunk) > 0:
+                this_amp_guess = this_df_chunk[contsub_col].max()
+                this_amp_bound = this_amp_guess + args.amp_factor * this_df_chunk[this_df_chunk[contsub_col] == this_amp_guess][flam_u_col].values[0] # max limit = max. amplitude + factor * error in max. amplitude
+                this_amp_guess = max(this_amp_guess, 0)
+            else:
+                this_amp_guess, this_amp_bound = 0., 0.001 # forced to be nearly zero because data does not exist for this chunk
+
+            if args.tie_vdisp: # Structure: [v_los, shared_sigma, amp1, amp2, ... ampN]
+                p0 = np.hstack([p0, [this_amp_guess]])
+                lbounds = np.hstack([lbounds, [0]])
+                ubounds = np.hstack([ubounds, [this_amp_bound]])
+            else: # Structure: [v_los, amp1, sig1, amp2, sig2, ... ampN, sigN]
+                p0 = np.hstack([p0, [this_amp_guess, sig_kmps_guess]])
+                lbounds = np.hstack([lbounds, [0, 0]])
+                ubounds = np.hstack([ubounds, [this_amp_bound, vel_bound]])
 
         # ----------defining model for this specific group----------------
         def group_model(t_x, *params):
             return global_gaussian_model(t_x, *params, rest_waves=g_waves, tie_vdisp=args.tie_vdisp)
 
         try:
-            popt, pcov = curve_fit(group_model, df_chunk[wave_col], df_chunk[contsub_col], p0=p0, sigma=df_chunk[flam_u_col], bounds=(lbounds, ubounds), maxfev=5000)
+            popt, pcov, infodict, _, _ = curve_fit(group_model, df_chunk[wave_col], df_chunk[contsub_col], 
+                                                   p0=p0, sigma=df_chunk[flam_u_col], bounds=(lbounds, ubounds), 
+                                                   maxfev=10000, full_output=True, absolute_sigma=True, method='dogbox')
             perr = np.sqrt(np.diag(pcov))
+            #print(f'Deb326: popt={popt},\nperr={perr}') ##
             
             # ------mapping parameters back to results------------
             v_fit, v_err = popt[0], perr[0]
@@ -323,9 +344,11 @@ def linefit_spectrum(df_spec, df_lines, line_groups, args, i='X', j='X', flam_co
                 mu_w = g_waves[ind] * (1 + ufloat(v_fit, v_err) / c_km_s)
                 sig_w = (ufloat(sig_fit, sig_err) * mu_w) / c_km_s
                 flux = ufloat(amp_fit, amp_err) * sig_w * np.sqrt(2 * np.pi) * flux_factor # multiplying the constant factor for flux here so that output fluxes are in units of ergs/s/cm^2
-                
+                flux_err = compute_flux_err(amp_fit, mu_w.n, sig_w.n, df_chunk, flam_col=flam_col, contsub_col=contsub_col, flam_u_col=flam_u_col, wave_col=wave_col, cont_col=cont_col, ax=None) * flux_factor # to compute error on flux
+                flux = ufloat(flux.n, flux_err)
+
                 fit_results_spaxel[g_labels[ind]] = {
-                    'flux': flux.n, 'flux_err': flux.s,
+                    'flux': flux.n, 'flux_err': flux.s, 'flux_snr': flux.n / flux.s if flux.s > 0 else np.nan,
                     'vel': v_fit, 'vel_err': v_err,
                     'sigma': sig_fit, 'sigma_err': sig_err
                 }
@@ -336,6 +359,8 @@ def linefit_spectrum(df_spec, df_lines, line_groups, args, i='X', j='X', flam_co
                 model_cont = np.interp(x_arr, df_chunk[wave_col], df_chunk[cont_col])
                 total_model = model_flux + model_cont # need to add the continuum back in just for plotting purposes
                 ax.plot(x_arr, total_model, color='k', lw=1.5, linestyle='--', label='Fitted model', zorder=5)
+                ax.plot(x_arr, group_model(x_arr, *p0) + model_cont, color='b', lw=1.5, linestyle='dotted', label='Initial model', zorder=5)
+                ax.text(0.01, 0.95 - index2 * 0.1, f'nfev = {infodict["nfev"]}', ha='left', va='top', color='k', transform=ax.transAxes)
 
         except Exception as e:
             print(f'Fit failed due to: {e}')
@@ -348,6 +373,29 @@ def linefit_spectrum(df_spec, df_lines, line_groups, args, i='X', j='X', flam_co
     return fit_results_spaxel
 
 # --------------------------------------------------------------------------------------------------------------------
+def compute_flux_err(amp, mu, sigma, df, flam_col='flam', contsub_col='flam_contsub', flam_u_col='flam_u', wave_col='rest_wave', cont_col='cont', model_frac=0.1, ax=None):
+    '''
+    Function to compute the error on flux (area aunder gaussian) based on deviation from best-fit gaussian model
+    '''
+    popt = [amp, mu, sigma]
+    df['model'] = gaussian(df[wave_col], *popt)
+
+    df = df[df['model'] > np.nanmax(df['model']) * model_frac] # selecting a window within which model flux drops to model_frac fraction of its peak value
+    delta_wave = np.median(np.diff(df[wave_col]))
+
+    df['flux_deviation'] = df['model'] - df[contsub_col]
+    df['area_deviation'] = df['flux_deviation'] * delta_wave
+    err = np.sqrt(np.sum(df['area_deviation'] ** 2))
+
+    if ax is not None:
+        ax.plot(df[wave_col], df[flam_col], ls='solid', c='g')
+        ax.plot(df[wave_col], df['model'] + df[cont_col], ls='dashed', c='darkgreen')
+        ax.plot(df[wave_col], df['flux_deviation'] + df[cont_col], ls='dotted', c='darkgreen')
+        ax.axhline(0, c='k', lw=0.5, ls='dotted')
+
+    return err
+
+# --------------------------------------------------------------------------------------------------------------------
 def plot_line_fit_spaxel(ax, df_spec, df_lines, args, popt=None, color='orangered', flam_col='flam', flam_u_col='flam_u', wave_col='rest_wave', label_col='labels', cont_col='cont', contsub_col='flam_contsub', flux_factor=1.):
     '''
     Plots the spectrum along one spaxel in the given axis handle, for debugging purposes
@@ -355,6 +403,7 @@ def plot_line_fit_spaxel(ax, df_spec, df_lines, args, popt=None, color='orangere
     '''
     # ---------------plot the observed spectrum---------------
     ax.step(df_spec[wave_col], df_spec[flam_col], lw=1, c=color, alpha=1, where='mid')
+    #ax.scatter(df_spec[wave_col], df_spec[flam_col], lw=1, c=color, alpha=1, s=5)
     ax.plot(df_spec[wave_col], df_spec[cont_col], lw=1, c='grey', alpha=1)
     ax.fill_between(df_spec[wave_col], (df_spec[flam_col] - df_spec[flam_u_col]/2), (df_spec[flam_col] + df_spec[flam_u_col]/2), lw=0, color=color, alpha=0.5, step='pre')#, drawstyle='steps')
 
@@ -704,8 +753,10 @@ def read_line_maps_fits(filename):
         data = hdul[i].data.copy()
         
         # -------chopping to a uniform pixel dimension--------
-        ny, nx = np.shape(data)
-        data = data[int(ny/2 - msa_npix_y/2): int(ny/2 + msa_npix_y/2), int(nx/2 - msa_npix_x/2): int(nx/2 + msa_npix_x/2)]
+        if args.chop_fov:
+            ny, nx = np.shape(data)
+            data = data[int(ny/2 - msa_npix_y/2): int(ny/2 + msa_npix_y/2), int(nx/2 - msa_npix_x/2): int(nx/2 + msa_npix_x/2)]
+        
         fit_results[label][dict_key] = data
 
     return fit_results, spatial_header
@@ -727,7 +778,8 @@ if __name__ == "__main__":
 
     # ----------------reading in catalog---------------------
     df = read_msa3d_catalog(catalog_file)
-    if not args.do_all_obj: df = df[df['id'].isin(args.id_arr)]
+    if not args.do_all_obj:
+        df = df[df['id'].isin(args.id_arr)].reset_index(drop=True)
 
     # ----------------looping over the objects in this chunk-------------
     for index, obj in df.iterrows():
@@ -750,7 +802,7 @@ if __name__ == "__main__":
             cube, cube_err, wavelengths, wcs, flux_factor = get_ifu_cube(args.cube_fits_file)
 
             # -----------emission line fitting--------------
-            fit_results = linefit_cube(cube, wavelengths, args, cube_err=cube_err, snr_thresh=1.5, flux_factor=flux_factor)
+            fit_results = linefit_cube(cube, wavelengths, args, cube_err=cube_err, snr_thresh=1., flux_factor=flux_factor)
 
             # -----------save the emission maps in fits file-------------
             save_line_maps_fits(fit_results, args.maps_fits_file, wcs, args)

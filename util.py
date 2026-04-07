@@ -53,11 +53,12 @@ def parse_args():
     parser.add_argument('--line_list', metavar='line_list', type=str, action='store', default='all', help='Which emission lines to look for? Default is all') # OR set default to 'Lya,OII,Hb,OIII,Ha,Ha+NII,SII,SIII,PaB,He-1083,PaA'
     parser.add_argument('--snr_cut', metavar='snr_cut', type=float, action='store', default=None, help='Impose an SNR cut on the emission line maps to; default is 0')
     parser.add_argument('--flam_max', metavar='flam_max', type=float, action='store', default=10, help='Maximum y-axis limit for f_lambda (in units of 1e-19 ergs/s/cm^2/A); default is None')
-    parser.add_argument('--mask_window', metavar='mask_window', type=float, action='store', default=30, help='Wavelength window around expected emission lines to mask out, before fitting continuum, in Angstrom; default is 30')
+    parser.add_argument('--mask_window', metavar='mask_window', type=float, action='store', default=15, help='Wavelength window around expected emission lines to mask out, before fitting continuum, in Angstrom; default is 15 Angstrom')
     parser.add_argument('--group_gap', metavar='group_gap', type=float, action='store', default=150, help='Wavelength window to consider for make friends-of-friends neighbouring line list, in Angstrom; default is 150')
     parser.add_argument('--fit_padding', metavar='fit_padding', type=float, action='store', default=20, help='Wavelength window to pad on either side of a neighbouring line list, in Angstrom; default is 10')
     parser.add_argument('--tie_vdisp', dest='tie_vdisp', action='store_true', default=False, help='Tie the velocity dispersion of all lines to be the same? Default is no.')
     parser.add_argument('--ncores', metavar='ncores', type=int, action='store', default=None, help='Number of cores to use in parallel for line fitting; default is None, i.e. all available cores')
+    parser.add_argument('--chop_fov', dest='chop_fov', action='store_true', default=False, help='Chop the FoV of cube to be a square? Default is no.')
 
     parser.add_argument('--debug_linefit', dest='debug_linefit', type=str, action='store', default=None, help='Debug the line fitting at a specific pixel (comma separated)? Default is no.')
     parser.add_argument('--save_linefit_plot', dest='save_linefit_plot', action='store_true', default=False, help='Save the plot for emission line fitting in each spaxel? Default is no.')
@@ -68,6 +69,7 @@ def parse_args():
     parser.add_argument('--plot_ratio_maps', dest='plot_ratio_maps', action='store_true', default=False, help='Plot the line ratio maps for a given galaxy? Default is no.')
     parser.add_argument('--plot_snr', dest='plot_snr', action='store_true', default=False, help='Plot the SNR map for a given galaxy? Default is no.')
     parser.add_argument('--plot_rgb', dest='plot_rgb', action='store_true', default=False, help='Plot the RGB image for a given galaxy based on emission line maps? Default is no.')
+    parser.add_argument('--amp_factor', metavar='amp_factor', type=float, action='store', default=10, help='SNR factor to be used to set the maximum amplitude in the line fits for a given line; default is 30')
 
     # ------- args added for make_metallicity_sfr_maps.py ------------------------------
     parser.add_argument('--upto_kpc', metavar='upto_kpc', type=float, action='store', default=5, help='Radius in kpc within which integrated quantitites would be measured, and radial fits would be performed; default is 5')
