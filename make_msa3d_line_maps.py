@@ -5,7 +5,7 @@
     Created: 06-02-26
     Example: run make_msa3d_line_maps.py --do_all_obj --tie_vdisp
              run make_msa3d_line_maps.py --id 2145 --plot_line_flux_maps --save_linefit_plot --ncores 4
-             run make_msa3d_line_maps.py --id 2145 --plot_line_quant_maps
+             run make_msa3d_line_maps.py --id 2145 --plot_line_quant_maps --snr_cut 3
              run make_msa3d_line_maps.py --id 2145 --plot_rgb
              run make_msa3d_line_maps.py --id 2145 --debug_linefit 15,12
              run make_msa3d_line_maps.py --do_all_obj --save_linefit_plot --plot_line_flux_maps --plot_line_quant_maps --ncores 6
@@ -465,7 +465,7 @@ def get_emission_line_map(line, fit_results, args, log_flux_min=-21, log_flux_ma
     snr_map = line_map / line_map_err
 
     # --------curtailing to real values only-------------------
-    mask = ~(np.isfinite(line_map)) #| (snr_map < 1e-3)
+    mask = ~(np.isfinite(line_map)) | (snr_map < args.snr_cut)
     if log_flux_max is not None: mask = mask | (line_map > 10 ** log_flux_max)
     if log_flux_min is not None: mask = mask | (line_map < 10 ** log_flux_min)
     line_map = np.where(mask, np.nan, line_map)

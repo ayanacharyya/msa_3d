@@ -51,7 +51,7 @@ def parse_args():
 
     # ------- args added for make_msa3d_line_maps.py ------------------------------
     parser.add_argument('--line_list', metavar='line_list', type=str, action='store', default='all', help='Which emission lines to look for? Default is all') # OR set default to 'Lya,OII,Hb,OIII,Ha,Ha+NII,SII,SIII,PaB,He-1083,PaA'
-    parser.add_argument('--snr_cut', metavar='snr_cut', type=float, action='store', default=None, help='Impose an SNR cut on the emission line maps to; default is 0')
+    parser.add_argument('--snr_cut', metavar='snr_cut', type=float, action='store', default=0, help='Impose an SNR cut on the emission line maps to; default is 0')
     parser.add_argument('--flam_max', metavar='flam_max', type=float, action='store', default=10, help='Maximum y-axis limit for f_lambda (in units of 1e-19 ergs/s/cm^2/A); default is None')
     parser.add_argument('--mask_window', metavar='mask_window', type=float, action='store', default=15, help='Wavelength window around expected emission lines to mask out, before fitting continuum, in Angstrom; default is 15 Angstrom')
     parser.add_argument('--group_gap', metavar='group_gap', type=float, action='store', default=150, help='Wavelength window to consider for make friends-of-friends neighbouring line list, in Angstrom; default is 150')
