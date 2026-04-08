@@ -525,7 +525,7 @@ def compute_Z_NB(line_label_array, line_waves_array, line_flux_array, args):
             obs_errs = obs_err_array[:, index]
 
             # ------discarding lines with negative fluxes-------------
-            good_obs = obs_fluxes >= 0
+            good_obs = (obs_fluxes > 0) & (obs_errs >= 0)
             obs_fluxes = obs_fluxes[good_obs]
             obs_errs = obs_errs[good_obs]
             line_labels = list(np.array(line_label_array)[good_obs])
