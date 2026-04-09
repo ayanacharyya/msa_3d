@@ -40,7 +40,39 @@ def read_msa3d_catalog(catalog_file):
     return df
 
 # --------------------------------------------------------------------------------------------------------------------
-def get_ifu_cube(cube_fits_file):
+def get_important_lines(args, lines=['H-beta', 'OIII-5007', 'H-alpha'], wave_col='rest_wave', label_col='labels'):
+    '''
+    Function to make dataframe with just a few important lines and their rest-wavelength windows
+    Returns dataframe
+    '''
+    important_lines = lines
+    df = pd.DataFrame({wave_col: [rest_wave_dict[item] for item in important_lines], label_col: important_lines})
+    df[f'{wave_col}_range'] = df[wave_col].map(lambda x: pd.Interval(x - args.mask_window, x + args.mask_window))
+
+    return df
+
+# --------------------------------------------------------------------------------------------------------------------
+def check_for_gaps(cube_err, wavelengths, df_imp_lines, args, wave_col='rest_wave', flam_u_col='flam_u', label_col='labels'):
+    '''
+    Accepts error cube and wavelength array corresponding to an IFU datacube
+    Checks for gaps in spectra (err = 0) and checks if these gaps coincide with any of the lines in df_imp_lines
+    Returns list of unreliable lines
+    '''    
+    rest_wave_arr = wavelengths / (1 + args.z) # converting to rest-frame wavelength, in Angstrom
+    flux_err=np.sqrt(np.nansum(np.nansum(cube_err**2, axis=1),axis=1))
+    df_spec = pd.DataFrame({wave_col: rest_wave_arr, 
+                            flam_u_col: flux_err.astype(np.float64),
+                            }) # typesetting to float64 to avoid big-endian/little-endian problem
+    bad_waves = df_spec[df_spec[flam_u_col] <= 0][wave_col]
+
+    df = df_imp_lines.copy()
+    df['reliable'] = df[f'{wave_col}_range'].apply(lambda x: not any((bad_waves > x.left) & (bad_waves <= x.right)))
+    unreliable_lines = df[~df['reliable']][label_col].values
+    
+    return unreliable_lines
+
+# --------------------------------------------------------------------------------------------------------------------
+def get_ifu_cube(cube_fits_file, args=None, df_imp_lines=None):
     '''
     Reads in the IFU datacube from a given filename
     Also reads in the corresponding errorcube, if that filename is provided
@@ -78,7 +110,13 @@ def get_ifu_cube(cube_fits_file):
     cube = cube * factors[:, np.newaxis, np.newaxis] / constant_factor
     cube_err = cube_err * factors[:, np.newaxis, np.newaxis] / constant_factor
 
-    return cube, cube_err, wavelengths, wcs, constant_factor
+    # -------determining whether file has gaps in important wavelength window---------
+    if df_imp_lines is None:
+        unreliable_lines = []
+    else:
+        unreliable_lines = check_for_gaps(cube_err, wavelengths, df_imp_lines, args)
+
+    return cube, cube_err, wavelengths, wcs, constant_factor, unreliable_lines
 
 # --------------------------------------------------------------------------------------------------------------------
 def linefit_cube(cube, wavelengths, args, cube_err=None, flam_col='flam', flam_u_col='flam_u', wave_col='rest_wave', label_col='labels', cont_col='cont', snr_thresh=1., flux_factor=1.):
@@ -403,7 +441,7 @@ def plot_line_fit_spaxel(ax, df_spec, df_lines, args, popt=None, color='orangere
     '''
     # ---------------plot the observed spectrum---------------
     ax.step(df_spec[wave_col], df_spec[flam_col], lw=1, c=color, alpha=1, where='mid')
-    #ax.scatter(df_spec[wave_col], df_spec[flam_col], lw=1, c=color, alpha=1, s=5)
+    #ax.scatter(df_spec[wave_col], df_spec[flam_col], lw=0, c=color, alpha=1, s=5)
     ax.plot(df_spec[wave_col], df_spec[cont_col], lw=1, c='grey', alpha=1)
     ax.fill_between(df_spec[wave_col], (df_spec[flam_col] - df_spec[flam_u_col]/2), (df_spec[flam_col] + df_spec[flam_u_col]/2), lw=0, color=color, alpha=0.5, step='pre')#, drawstyle='steps')
 
@@ -610,7 +648,7 @@ def plot_line_flux_maps(fit_results, args):
         if args.plot_snr: axes_snr[row, col].remove()
 
      # ---------saving figures-------------------
-    figname = f'{args.id}_fluxmaps{tie_vdisp_text}.png'
+    figname = f'{args.id}_fluxmaps{tie_vdisp_text}{snr_cut_text}.png'
     save_fig(fig, args.fig_dir, figname, args)    
     if args.plot_snr: save_fig(fig_snr, args.fig_dir, Path(str(figname).replace('flux', 'snr')), args)
 
@@ -650,7 +688,7 @@ def plot_line_quant_maps(fit_results, line, args):
     if args.plot_snr: fig_snr.text(0.15, 0.9, f'ID {args.id}: {line} SNR', fontsize=args.fontsize, c='k', ha='left', va='top')
 
     # ---------saving figures-------------------
-    figname = f'{args.id}_{line}_fitted_maps{tie_vdisp_text}.png'
+    figname = f'{args.id}_{line}_fitted_maps{tie_vdisp_text}{snr_cut_text}.png'
     save_fig(fig, args.fig_dir, figname, args)    
     if args.plot_snr: save_fig(fig_snr, args.fig_dir, Path(str(figname).replace('maps', 'snr')), args)
 
@@ -775,8 +813,10 @@ if __name__ == "__main__":
 
     catalog_file = args.input_dir / 'redshifts.dat'
     tie_vdisp_text = '_tie_vdisp' if args.tie_vdisp else ''
+    snr_cut_text = f'_snr{args.snr_cut}'
 
     # ----------------reading in catalog---------------------
+    df_imp_lines = get_important_lines(args)
     df = read_msa3d_catalog(catalog_file)
     if not args.do_all_obj:
         df = df[df['id'].isin(args.id_arr)].reset_index(drop=True)
@@ -797,9 +837,14 @@ if __name__ == "__main__":
         args.linefit_fig_dir = args.fig_dir / f'{args.id}_linefit_plots'
         args.linefit_fig_dir.mkdir(exist_ok=True, parents=True)
         
+        # --------------running line fitting over the cube-----------------------------
         if not os.path.exists(args.maps_fits_file) or args.clobber or args.debug_linefit is not None:
             # -----------read in the cube--------------
-            cube, cube_err, wavelengths, wcs, flux_factor = get_ifu_cube(args.cube_fits_file)
+            cube, cube_err, wavelengths, wcs, flux_factor, unreliable_lines = get_ifu_cube(args.cube_fits_file, args=args, df_imp_lines=df_imp_lines)
+            if len(unreliable_lines) > 0:
+                print(f'\n\t{unreliable_lines} lie in detector gap for object {args.id}, therefore not proceeding with fitting; continuing to next object')
+                if not args.debug_linefit:
+                    continue
 
             # -----------emission line fitting--------------
             fit_results = linefit_cube(cube, wavelengths, args, cube_err=cube_err, snr_thresh=1., flux_factor=flux_factor)
@@ -817,7 +862,7 @@ if __name__ == "__main__":
             if line in list(fit_results.keys()):
                 fig = plot_line_quant_maps(fit_results, line, args)
             else:
-                print(f'{line} is not available for object {args.id}')
+                print(f'\t{line} is not available for object {args.id}')
         if args.plot_rgb:
             rlines, glines, blines = 'SII-6717,SII-6730', 'H-alpha', 'OIII-5007'
             rgb_image = compute_rgb(fit_results, args, rlines=rlines, glines=glines, blines=blines)

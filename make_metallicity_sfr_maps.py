@@ -11,7 +11,7 @@
 
 from header import *
 from util import *
-from make_msa3d_line_maps import read_line_maps_fits, read_msa3d_catalog, plot_2D_map, get_emission_line_map, compute_rgb
+from make_msa3d_line_maps import read_line_maps_fits, read_msa3d_catalog, plot_2D_map, get_emission_line_map, compute_rgb, get_ifu_cube, get_important_lines
 
 start_time = datetime.now()
 
@@ -909,8 +909,6 @@ def get_quant_from_quant_maps(quant, quant_maps):
     return map, map_err, integrated, mask
    
 # --------------------------------------------------------------------------------------------------------------------
-
-# --------------------------------------------------------------------------------------------------------------------
 if __name__ == "__main__":
     args = parse_args()
     if not args.keep: plt.close('all')
@@ -922,6 +920,7 @@ if __name__ == "__main__":
     log_sfr_min, log_sfr_max = -4, 1
     
     # -------------setup directories and global variables----------------
+    cube_fits_dir = args.input_dir / 'cubes'
     maps_fits_dir = args.output_dir / 'maps'
     quants_fits_dir = args.output_dir / 'quants'
     args.fig_dir = args.output_dir / 'plots'
@@ -929,10 +928,11 @@ if __name__ == "__main__":
 
     catalog_file = args.input_dir / 'redshifts.dat'
     tie_vdisp_text = '_tie_vdisp' if args.tie_vdisp else ''
-
-    Z_SFR_slope_file = args.output_dir / 'catalogs' / f'Z_{args.Zdiag}_SFR_slopes{tie_vdisp_text}.csv'
+    snr_cut_text = f'_snr{args.snr_cut}'
+    Z_SFR_slope_file = args.output_dir / 'catalogs' / f'Z_{args.Zdiag}_SFR_slopes{tie_vdisp_text}{snr_cut_text}.csv'
 
     # ----------------reading in catalog---------------------
+    df_imp_lines = get_important_lines(args)
     df = read_msa3d_catalog(catalog_file)
     #if args.do_all_obj: df_out = pd.DataFrame(columns=np.hstack(df.columns, ['Z_SFR_slope', 'Z_SFR_slope_u', 'Z_SFR_cen', 'Z_SFR_cen_u']))
     if args.do_all_obj: output_rows_list = []
@@ -949,10 +949,17 @@ if __name__ == "__main__":
         args.upto_pix = args.upto_arcsec / msa_pix_size_arcsec
 
         # ------determining directories and filenames---------
+        args.cube_fits_file = cube_fits_dir / f'cube_square_medians_{args.id:d}_hdr_rect_err.fits'
         args.maps_fits_file = maps_fits_dir / f'{args.id:05d}{tie_vdisp_text}.maps.fits'
-        args.quants_fits_file = quants_fits_dir / f'{args.id:05d}_Zdiag_{args.Zdiag}{tie_vdisp_text}.quants.fits'
+        args.quants_fits_file = quants_fits_dir / f'{args.id:05d}_Zdiag_{args.Zdiag}{tie_vdisp_text}{snr_cut_text}.quants.fits'
 
         try:
+            # -----------checking if gaps in cube coincide with important lines--------------
+            _, _, _, _, _, unreliable_lines = get_ifu_cube(args.cube_fits_file, args=args, df_imp_lines=df_imp_lines)
+            if len(unreliable_lines) > 0:
+                print(f'\n\t{unreliable_lines} lie in detector gap for object {args.id}, therefore not proceeding with fitting; continuing to next object')
+                continue
+
             # ---------measuring the various quantitites--------
             if not os.path.exists(args.quants_fits_file) or args.clobber:
                 # -----------read in the emission line maps--------------
@@ -984,7 +991,7 @@ if __name__ == "__main__":
                 ax = plot_quant_map(ax, 'logOH', quant_maps, args, cmap='cividis', takelog=False, vmin=logOH_min, vmax=logOH_max, hide_cbar=False)
                 
                 fig.text(0.1, 0.98, f'ID {args.id}', fontsize=args.fontsize, c='k', ha='left', va='top')
-                save_fig(fig, args.fig_dir, f'{args.id}_metallicity_{args.Zdiag}_maps.png', args)    
+                save_fig(fig, args.fig_dir, f'{args.id}_metallicity_{args.Zdiag}_maps{snr_cut_text}.png', args)    
 
             if args.plot_met_sfr:
                 fig, axes = plt.subplots(1, 5, figsize=(14, 4.5))
@@ -1015,7 +1022,7 @@ if __name__ == "__main__":
 
                 # ------plotting logOH vs SFR----------------
                 axes[-1], linefit = plot_met_sfr_corr(axes[-1], quant_maps, args, color='salmon', log_sfr_min=log_sfr_min, log_sfr_max=log_sfr_max, logOH_min=logOH_min, logOH_max=logOH_max)
-                save_fig(fig, args.fig_dir, f'{args.id}_metallicity_{args.Zdiag}_SFR_corr.png', args) 
+                save_fig(fig, args.fig_dir, f'{args.id}_metallicity_{args.Zdiag}_SFR_corr{snr_cut_text}.png', args) 
 
                 # -------appending line fit to output dataframe-----------
                 if args.do_all_obj:

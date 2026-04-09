@@ -3,7 +3,7 @@
     Notes: Performs metallicity and SFR maps from MSA-3D emission line maps and stores them in fits files
     Author : Ayan
     Created: 30-03-26
-    Example: run plot_relations.py --Zdiag NB
+    Example: run plot_relations.py --Zdiag NB --snr_cut 3
 '''
 
 from header import *
@@ -20,14 +20,11 @@ def make_plot(xcol, ycol, df, ax, args, colorcol=None, cmap='plasma', color='cor
     label_dict = {'redshift':'Redshift', 'log_mass':'Log stellar mass', 'log_sfr':'Log SFR', 'Zgrad_kpc':r'$\nabla_r$Z', 'Zgrad_re':r'$\nabla_r$Z', 'logZ_logSFR_slope':r'$\nabla_r$Z - $\Sigma_{\rm SFR}$ slope', 'vdisp_mean':r'Mean $\sigma_{\rm disp}$', 'vdisp_50':r'Median $\sigma_{\rm disp}$', 't_mix':r'$t_{\rm mix}$'}
     unit_dict = {'redshift':'', 'log_mass':r'M$_{\odot}$', 'log_sfr':r'M$_{\odot}$/yr', 'Zgrad_kpc':'dex/kpc', 'Zgrad_re':r'dex/r$_e$', 'logZ_logSFR_slope':'', 'vdisp_mean':'km/s', 'vdisp_50':'km/s', 't_mix':'yr'}
 
-    vmin_dict = {'redshift':0.9, 'log_mass':8.0, 'log_sfr':-4.0, 'Zgrad_kpc':-2, 'Zgrad_re':-2, 'logZ_logSFR_slope':-0.3, 'vdisp_mean':None, 'vdisp_50':None, 't_mix':0}
-    vmax_dict = {'redshift':1.9, 'log_mass':11.0, 'log_sfr':1.0, 'Zgrad_kpc':2, 'Zgrad_re':2, 'logZ_logSFR_slope':0.3, 'vdisp_mean':None, 'vdisp_50':None, 't_mix':300}
+    vmin_dict = {'redshift':0.9, 'log_mass':8.0, 'log_sfr':-4.0, 'Zgrad_kpc':-2, 'Zgrad_re':-2, 'logZ_logSFR_slope':-100, 'vdisp_mean':None, 'vdisp_50':None, 't_mix':0}
+    vmax_dict = {'redshift':1.9, 'log_mass':11.0, 'log_sfr':1.0, 'Zgrad_kpc':2, 'Zgrad_re':2, 'logZ_logSFR_slope':100, 'vdisp_mean':None, 'vdisp_50':None, 't_mix':None}
 
     # vmin_dict = {'redshift':0.9, 'log_mass':8.0, 'log_sfr':-4.0, 'Zgrad_kpc':-2, 'Zgrad_re':-2, 'logZ_logSFR_slope':-0.3, 'vdisp_mean':None, 'vdisp_50':None, 't_mix':-70}
     # vmax_dict = {'redshift':1.9, 'log_mass':11.0, 'log_sfr':1.0, 'Zgrad_kpc':2, 'Zgrad_re':2, 'logZ_logSFR_slope':0.4, 'vdisp_mean':None, 'vdisp_50':None, 't_mix':100}
-
-    # vmin_dict = {'redshift':0.9, 'log_mass':8.0, 'log_sfr':-4.0, 'Zgrad_kpc':None, 'Zgrad_re':None, 'logZ_logSFR_slope':None, 'vdisp_mean':None, 'vdisp_50':None, 't_mix':None}
-    # vmax_dict = {'redshift':1.9, 'log_mass':11.0, 'log_sfr':1.0, 'Zgrad_kpc':None, 'Zgrad_re':None, 'logZ_logSFR_slope':None, 'vdisp_mean':None, 'vdisp_50':None, 't_mix':None}
 
     p = ax.scatter(df[xcol], df[ycol], s=size, lw=1, ec='k', c=df[colorcol] if colorcol is not None else color)
 
@@ -51,7 +48,8 @@ if __name__ == "__main__":
     # -------------setup directories and global variables----------------
     args.fig_dir = args.output_dir / 'plots'
     tie_vdisp_text = '_tie_vdisp' if args.tie_vdisp else ''
-    Z_SFR_slope_file = args.output_dir / 'catalogs' / f'Z_{args.Zdiag}_SFR_slopes{tie_vdisp_text}.csv'
+    snr_cut_text = f'_snr{args.snr_cut}'
+    Z_SFR_slope_file = args.output_dir / 'catalogs' / f'Z_{args.Zdiag}_SFR_slopes{tie_vdisp_text}{snr_cut_text}.csv'
 
     # -----------read dataframe-------------------
     df = pd.read_csv(Z_SFR_slope_file)
@@ -67,7 +65,7 @@ if __name__ == "__main__":
     axes[3] = make_plot('vdisp_50', 't_mix', df, axes[3], args, colorcol='log_mass')
 
     # ----------save figure---------------
-    figname = f'all_relations_Z_{args.Zdiag}{tie_vdisp_text}.png'
+    figname = f'all_relations_Z_{args.Zdiag}{tie_vdisp_text}{snr_cut_text}.png'
     save_fig(fig, args.fig_dir, figname, args)
 
     print(f'Completed in {timedelta(seconds=(datetime.now() - start_time).seconds)}')
