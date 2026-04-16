@@ -3,11 +3,12 @@
     Notes: Make a gallery of RGB images based on the MSA-3D emission line maps
     Author : Ayan
     Created: 30-03-26
-    Example: run make_rgb_gallery.py
+    Example: run make_rgb_gallery.py --snr_cut 3
 '''
 
 from header import *
 from util import *
+setup_plot_style()
 from make_msa3d_line_maps import read_line_maps_fits, read_msa3d_catalog, compute_rgb
 
 start_time = datetime.now()
@@ -43,6 +44,7 @@ if __name__ == "__main__":
     
     catalog_file = args.input_dir / 'redshifts.dat'
     tie_vdisp_text = '_tie_vdisp' if args.tie_vdisp else ''
+    snr_cut_text = f'_snr{args.snr_cut}'
 
     # ----------------reading in catalog---------------------
     df = read_msa3d_catalog(catalog_file)
@@ -70,7 +72,7 @@ if __name__ == "__main__":
             print(f'Line fitted file for {args.id} does not exist')
             axes[row, col].remove()
             continue
-        fit_results, _ = read_line_maps_fits(args.maps_fits_file)
+        fit_results, _ = read_line_maps_fits(args.maps_fits_file, args)
 
         # -----------gettign RGB image------------------
         rgb_image = compute_rgb(fit_results, args, rlines='SII-6717,SII-6730', glines='H-alpha', blines='OIII-5007')
@@ -92,7 +94,7 @@ if __name__ == "__main__":
         axes[row, col].remove()
 
     # ----------save figure---------------
-    figname = f'all_RGB_{tie_vdisp_text}.png'
+    figname = f'all_RGB_{tie_vdisp_text}{snr_cut_text}.png'
     save_fig(fig, args.fig_dir, figname, args)
 
     print(f'Completed in {timedelta(seconds=(datetime.now() - start_time).seconds)}')

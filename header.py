@@ -74,10 +74,6 @@ import matplotlib.ticker as ticker
 from matplotlib.collections import PatchCollection
 
 from matplotlib import pyplot as plt
-plt.rcParams['ytick.direction'] = 'in'
-plt.rcParams['ytick.right'] = True
-plt.rcParams['xtick.direction'] = 'in'
-plt.rcParams['xtick.top'] = True
 
 HOME = Path.home()
 

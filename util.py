@@ -137,6 +137,19 @@ def parse_args():
 
     return args
 
+# ----------------------------------------------------------------
+def setup_plot_style():
+    '''
+    Function to set default style for all plots made in this project
+    '''
+    # plt.rcParams['pdf.fonttype']	= 42
+    # plt.rcParams['ps.fonttype'] 	= 42
+    # plt.rcParams['savefig.dpi'] 	= 600
+    plt.rcParams['ytick.direction'] = 'in'
+    plt.rcParams['ytick.right'] = True
+    plt.rcParams['xtick.direction'] = 'in'
+    plt.rcParams['xtick.top'] = True
+
 # ------------------------------------------------------------------------------------
 def get_zrange_for_line(line, obs_wave_range=[800, 2200]):
     '''
