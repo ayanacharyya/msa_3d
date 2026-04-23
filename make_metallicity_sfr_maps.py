@@ -1012,13 +1012,35 @@ if __name__ == "__main__":
                 # ----------getting Halpha kinematics from fit--------------
                 line, param = 'H-alpha', 'sigma'
                 fit_results, _ = read_line_maps_fits(args.maps_fits_file, args)
-                vdisp_map = fit_results[line][param]
+                flux_map, _ = get_emission_line_map(line, fit_results, args, dered=False)
+                vdisp_map = np.where(flux_map.mask, np.nan, fit_results[line][param])
+                vdisp_map_err = np.where(flux_map.mask, np.nan, fit_results[line][f'{param}_err'])
+                
                 axes[3] = plot_2D_map(vdisp_map, axes[3], r'$\sigma_{\rm vel}$ (km/s)', args, cmap='plasma', takelog=False, vmin=0, vmax=100, hide_xaxis=False, hide_yaxis=True, hide_cbar=False)
                 
-                # ---------cutting to only the relevant area of th evdisp map-----------
+                # ---------cutting to only the relevant area of the 2D map-----------
+                flux_map_cut = cut_2Dmap(unp.nominal_values(flux_map.data), args.upto_pix)
                 vdisp_map_cut = cut_2Dmap(vdisp_map, args.upto_pix)
-                percentiles = np.nanpercentile(vdisp_map_cut.flatten(), [50, 16, 84])
-                vdisp_stats = {'vdisp_mean':np.nanmean(vdisp_map_cut), 'vdisp_50':percentiles[0], 'vdisp_16':percentiles[1], 'vdisp_84':percentiles[2]}
+                vdisp_map_err_cut = cut_2Dmap(vdisp_map_err, args.upto_pix)
+                
+                # -----------computing weighted mean---------------
+                mask = np.isnan(flux_map_cut) | np.isnan(vdisp_map_cut) | np.isnan(vdisp_map_err_cut)
+                vdisp = np.ma.compressed(np.ma.masked_where(mask, vdisp_map_cut))
+                vdisp_err = np.ma.compressed(np.ma.masked_where(mask, vdisp_map_err_cut))
+                weights = np.ma.compressed(np.ma.masked_where(mask, flux_map_cut))
+
+                weighted_mean = np.sum(vdisp * weights) / np.sum(weights)
+                mean_err = np.sqrt(np.sum((weights * vdisp_err)**2)) / np.sum(weights)
+
+                # -----------computing weighted percentiles---------------
+                sorter = np.argsort(vdisp)
+                vdisp = vdisp[sorter]
+                weights = weights[sorter]
+                cum_weights = np.cumsum(weights) - 0.5 * weights
+                cum_weights /= np.sum(weights)
+                
+                percentiles = np.interp([0.16, 0.50, 0.84], cum_weights, vdisp)
+                vdisp_stats = {'vdisp_mean':weighted_mean, 'vdisp_mean_u':mean_err, 'vdisp_16':percentiles[0], 'vdisp_50':percentiles[1], 'vdisp_84':percentiles[2]}
 
                 # ------plotting logOH vs SFR----------------
                 axes[-1], linefit = plot_met_sfr_corr(axes[-1], quant_maps, args, color='salmon', log_sfr_min=log_sfr_min, log_sfr_max=log_sfr_max, logOH_min=logOH_min, logOH_max=logOH_max)
