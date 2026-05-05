@@ -4,6 +4,7 @@
     Author : Ayan
     Created: 30-03-26
     Example: run plot_relations.py --Zdiag NB --snr_cut 3 --fit_correlation
+             run plot_relations.py --Zdiag R3 --snr_cut 3 --fit_correlation
 '''
 
 from header import *
@@ -18,16 +19,16 @@ def make_plot(xcol, ycol, df, ax, args, colorcol=None, cmap='plasma', color='cor
     Accepts dataframe, and column names to plot, and plots those on a given axis handle, then annotates the axes based on label dictionaries
     Returns the axis
     '''
-    label_dict = {'redshift':'Redshift', 'log_mass':'Log stellar mass', 'log_sfr':'Log SFR', 'Zgrad_kpc':r'$\nabla_r$Z', 'Zgrad_re':r'$\nabla_r$Z', 'logZ_logSFR_slope':r'$\nabla_r$Z - $\Sigma_{\rm SFR}$ slope', 'vdisp_mean':r'Mean $\sigma_{\rm disp}$', 'vdisp_50':r'Median $\sigma_{\rm disp}$', 't_mix':r'$t_{\rm mix}$'}
-    unit_dict = {'redshift':'', 'log_mass':r'M$_{\odot}$', 'log_sfr':r'M$_{\odot}$/yr', 'Zgrad_kpc':'dex/kpc', 'Zgrad_re':r'dex/r$_e$', 'logZ_logSFR_slope':'', 'vdisp_mean':'km/s', 'vdisp_50':'km/s', 't_mix':'yr'}
+    label_dict = {'redshift':'Redshift', 'log_mass':'Log stellar mass', 'log_sfr':'Log SFR', 'Zgrad_kpc':r'$\nabla_r$Z', 'Zgrad_re':r'$\nabla_r$Z', 'logZ_logSFR_slope':r'$\nabla_r$Z - $\Sigma_{\rm SFR}$ slope', 'vdisp_mean':r'Mean $\sigma_{\rm disp}$', 'vdisp_50':r'Median $\sigma_{\rm disp}$', 't_mix':r'$t_{\rm mix}$', 'sigma0':r'Juan $\sigma_{\rm disp}$'}
+    unit_dict = {'redshift':'', 'log_mass':r'M$_{\odot}$', 'log_sfr':r'M$_{\odot}$/yr', 'Zgrad_kpc':'dex/kpc', 'Zgrad_re':r'dex/r$_e$', 'logZ_logSFR_slope':'', 'vdisp_mean':'km/s', 'vdisp_50':'km/s', 't_mix':'yr', 'sigma0':'km/s'}
 
     if args.Zdiag == 'NB':
-        vmin_dict = {'redshift':0.9, 'log_mass':8.0, 'log_sfr':-4.0, 'Zgrad_kpc':-2, 'Zgrad_re':-2, 'logZ_logSFR_slope':-60, 'vdisp_mean':50, 'vdisp_50':50, 't_mix':0}
-        vmax_dict = {'redshift':1.9, 'log_mass':11.0, 'log_sfr':1.0, 'Zgrad_kpc':2, 'Zgrad_re':2, 'logZ_logSFR_slope':20, 'vdisp_mean':150, 'vdisp_50':150, 't_mix':350}
+        vmin_dict = {'redshift':0.9, 'log_mass':8.0, 'log_sfr':-4.0, 'Zgrad_kpc':-2, 'Zgrad_re':-2, 'logZ_logSFR_slope':-60, 'vdisp_mean':50, 'vdisp_50':50, 't_mix':0, 'sigma0':None}
+        vmax_dict = {'redshift':1.9, 'log_mass':11.0, 'log_sfr':1.0, 'Zgrad_kpc':2, 'Zgrad_re':2, 'logZ_logSFR_slope':20, 'vdisp_mean':150, 'vdisp_50':150, 't_mix':350, 'sigma0':None}
         
-    elif args.Zdiag == 'R23':
-        vmin_dict = {'redshift':0.9, 'log_mass':8.0, 'log_sfr':-4.0, 'Zgrad_kpc':-2, 'Zgrad_re':-2, 'logZ_logSFR_slope':-0.5, 'vdisp_mean':50, 'vdisp_50':50, 't_mix':-250}
-        vmax_dict = {'redshift':1.9, 'log_mass':11.0, 'log_sfr':1.0, 'Zgrad_kpc':2, 'Zgrad_re':2, 'logZ_logSFR_slope':0.7, 'vdisp_mean':150, 'vdisp_50':150, 't_mix':250}
+    elif args.Zdiag == 'R3':
+        vmin_dict = {'redshift':0.9, 'log_mass':8.0, 'log_sfr':-4.0, 'Zgrad_kpc':-2, 'Zgrad_re':-2, 'logZ_logSFR_slope':-0.5, 'vdisp_mean':50, 'vdisp_50':50, 't_mix':-250, 'sigma0':None}
+        vmax_dict = {'redshift':1.9, 'log_mass':11.0, 'log_sfr':1.0, 'Zgrad_kpc':2, 'Zgrad_re':2, 'logZ_logSFR_slope':0.7, 'vdisp_mean':150, 'vdisp_50':150, 't_mix':250, 'sigma0':None}
 
     # vmin_dict = {'redshift':0.9, 'log_mass':8.0, 'log_sfr':-4.0, 'Zgrad_kpc':-2, 'Zgrad_re':-2, 'logZ_logSFR_slope':-0.3, 'vdisp_mean':None, 'vdisp_50':None, 't_mix':-70}
     # vmax_dict = {'redshift':1.9, 'log_mass':11.0, 'log_sfr':1.0, 'Zgrad_kpc':2, 'Zgrad_re':2, 'logZ_logSFR_slope':0.4, 'vdisp_mean':None, 'vdisp_50':None, 't_mix':100}
@@ -61,15 +62,24 @@ if __name__ == "__main__":
     # -------------setup directories and global variables----------------
     args.fig_dir = args.output_dir / 'plots'
     tie_vdisp_text = '_tie_vdisp' if args.tie_vdisp else ''
-    snr_cut_text = f'_snr{args.snr_cut}'
+    snr_cut_text = f'_snr{args.snr_cut}' if args.snr_cut is not None else ''
     Z_SFR_slope_file = args.output_dir / 'catalogs' / f'Z_{args.Zdiag}_SFR_slopes{tie_vdisp_text}{snr_cut_text}.csv'
+    Juan_vdisp_file = args.input_dir / 'v_over_sigma.csv'
 
     # -----------read dataframe-------------------
     df = pd.read_csv(Z_SFR_slope_file)
-    def_omit_ids = [9527, 7561]
-    maybe_omit_ids = [9337, 8512, 7314, 2145]
+    df_juan = pd.read_csv(Juan_vdisp_file)
+    df = df.merge(df_juan[['gal_id', 'sigma0', 'sigma0_errm']], left_on='id', right_on='gal_id', how='inner')
+    df = df.rename(columns={'sigma0_errm': 'sigma0_u'})
+
+    # -----------curtail dataframe-------------------
+    def_omit_ids = [12071, 11944, 11843, 10863, 9527, 9337, 7561, ]
+    maybe_omit_ids = [29470, 11225, 8512, 4391, 2145, ]
     omit_ids = def_omit_ids + maybe_omit_ids
     #df = df[~df['id'].isin(omit_ids)]
+    
+    df['logZ_logSFR_slope_snr'] = np.abs(df['logZ_logSFR_slope']) / df['logZ_logSFR_slope_u']
+    #df = df[df['logZ_logSFR_slope_snr'] > 3]
 
     # -------make plots-----------
     fig, axes = plt.subplots(2, 2, figsize=(10, 6))
@@ -79,7 +89,8 @@ if __name__ == "__main__":
     axes[0] = make_plot('log_mass', 'logZ_logSFR_slope', df, axes[0], args, colorcol='redshift', do_fit=False)
     axes[1] = make_plot('log_mass', 't_mix', df, axes[1], args, colorcol='redshift', do_fit=False)
     axes[2] = make_plot('vdisp_mean', 't_mix', df, axes[2], args, colorcol='log_mass', do_fit=args.fit_correlation)
-    axes[3] = make_plot('vdisp_50', 't_mix', df, axes[3], args, colorcol='log_mass', do_fit=args.fit_correlation)
+    #axes[3] = make_plot('vdisp_50', 't_mix', df, axes[3], args, colorcol='log_mass', do_fit=args.fit_correlation)
+    axes[3] = make_plot('sigma0', 't_mix', df, axes[3], args, colorcol='log_mass', do_fit=args.fit_correlation)
 
     # ----------save figure---------------
     figname = f'all_relations_Z_{args.Zdiag}{tie_vdisp_text}{snr_cut_text}.png'

@@ -44,7 +44,7 @@ if __name__ == "__main__":
     
     catalog_file = args.input_dir / 'redshifts.dat'
     tie_vdisp_text = '_tie_vdisp' if args.tie_vdisp else ''
-    snr_cut_text = f'_snr{args.snr_cut}'
+    snr_cut_text = f'_snr{args.snr_cut}' if args.snr_cut is not None else ''
 
     # ----------------reading in catalog---------------------
     df = read_msa3d_catalog(catalog_file)

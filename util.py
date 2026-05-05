@@ -51,7 +51,7 @@ def parse_args():
 
     # ------- args added for make_msa3d_line_maps.py ------------------------------
     parser.add_argument('--line_list', metavar='line_list', type=str, action='store', default='all', help='Which emission lines to look for? Default is all') # OR set default to 'Lya,OII,Hb,OIII,Ha,Ha+NII,SII,SIII,PaB,He-1083,PaA'
-    parser.add_argument('--snr_cut', metavar='snr_cut', type=float, action='store', default=0, help='Impose an SNR cut on the emission line maps to; default is 0')
+    parser.add_argument('--snr_cut', metavar='snr_cut', type=float, action='store', default=None, help='Impose an SNR cut on the emission line maps to; default is None i.e. no SNR cut')
     parser.add_argument('--flam_max', metavar='flam_max', type=float, action='store', default=10, help='Maximum y-axis limit for f_lambda (in units of 1e-19 ergs/s/cm^2/A); default is None')
     parser.add_argument('--mask_window', metavar='mask_window', type=float, action='store', default=15, help='Wavelength window around expected emission lines to mask out, before fitting continuum, in Angstrom; default is 15 Angstrom')
     parser.add_argument('--group_gap', metavar='group_gap', type=float, action='store', default=150, help='Wavelength window to consider for make friends-of-friends neighbouring line list, in Angstrom; default is 150')
@@ -69,6 +69,7 @@ def parse_args():
     parser.add_argument('--plot_ratio_maps', dest='plot_ratio_maps', action='store_true', default=False, help='Plot the line ratio maps for a given galaxy? Default is no.')
     parser.add_argument('--plot_snr', dest='plot_snr', action='store_true', default=False, help='Plot the SNR map for a given galaxy? Default is no.')
     parser.add_argument('--plot_rgb', dest='plot_rgb', action='store_true', default=False, help='Plot the RGB image for a given galaxy based on emission line maps? Default is no.')
+    parser.add_argument('--make_speccat', dest='make_speccat', action='store_true', default=False, help='Make the spectroscopic catalog based on integrated emission line fluxes? Default is no.')
     parser.add_argument('--amp_factor', metavar='amp_factor', type=float, action='store', default=10, help='SNR factor to be used to set the maximum amplitude in the line fits for a given line; default is 30')
 
     # ------- args added for make_metallicity_sfr_maps.py ------------------------------
@@ -80,6 +81,9 @@ def parse_args():
     parser.add_argument('--use_original_NB_grid', dest='use_original_NB_grid', action='store_true', default=False, help='Use the original, unmodified NebulaBayes grid? Default is no.')
     parser.add_argument('--plot_metallicity', dest='plot_metallicity', action='store_true', default=False, help='Plot the metallicity map? Default is no.')
     parser.add_argument('--plot_met_sfr', dest='plot_met_sfr', action='store_true', default=False, help='Plot the metallicity and SFR maps? Default is no.')
+    parser.add_argument('--plot_all_quant', dest='plot_all_quant', action='store_true', default=False, help='Plot the metallicity, SFR, RGB, vel dispersion maps? Default is no.')
+    parser.add_argument('--plot_sfr', dest='plot_sfr', action='store_true', default=False, help='Plot the SFR and line maps? Default is no.')
+    parser.add_argument('--plot_ebv', dest='plot_ebv', action='store_true', default=False, help='Plot the E(B-V) and line maps? Default is no.')
     parser.add_argument('--Zdiag', metavar='Zdiag', type=str, action='store', default='KD02_R23', help='Which metallicity diagnostic to use (choose between KD02_R23,R23,R3,O3S2,O3O2,S2,R2,RS32,Te,P25,NB? Default is KD02_R23')
     parser.add_argument('--Zbranch', metavar='Zbranch', type=str, action='store', default='low', help='Which R23 branch to be used (choose between high/low)? Default is low')
     parser.add_argument('--use_C25', dest='use_C25', action='store_true', default=False, help='Use the Cataldi+2025 calibrations rather than Curti+2020? Default is no.')
@@ -487,7 +491,7 @@ def annotate_axes(ax, xlabel, ylabel, xlim=None, ylim=None, args=None, fontsize=
     Returns the axis handle
     '''
     if args is not None: fontsize, fontfactor = args.fontsize, args.fontfactor
-    ax.text(0.05, 0.9, label, c=label_color, fontsize=fontsize/fontfactor, ha='left', va='top', bbox=dict(facecolor='white', edgecolor='black', alpha=0.9) if bbox else None, transform=ax.transAxes)
+    ax.text(0.05, 0.95, label, c=label_color, fontsize=fontsize/fontfactor, ha='left', va='top', bbox=dict(facecolor='white', edgecolor='black', alpha=0.9) if bbox else None, transform=ax.transAxes)
 
     if xlim is not None: ax.set_xlim(xlim)
     ax.xaxis.set_major_locator(ticker.MaxNLocator(nbins=3, prune='both'))

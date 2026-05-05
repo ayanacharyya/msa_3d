@@ -77,11 +77,11 @@ from matplotlib import pyplot as plt
 
 HOME = Path.home()
 
-rest_wave_dict = {'OIII-4363': 4363.209,
+rest_wave_dict = {#'OIII-4363': 4363.209,
                   'H-beta': 4861.333,
                   'OIII-4959': 4958.911,
                   'OIII-5007': 5008.239,
-                  'OI-6302': 6302.047,
+                  #'OI-6302': 6302.047,
                   'NII-6548': 6549.86,
                   'H-alpha': 6564.632,
                   'NII-6584': 6585.273,

@@ -4,9 +4,12 @@
     Author : Ayan
     Created: 06-02-26
     Example: run make_metallicity_sfr_maps.py --do_all_obj --Zdiag NB --plot_met_sfr --snr_cut 3
-             run make_metallicity_sfr_maps.py --id 2145 --Zdiag NB --plot_metallicity --snr_cut 3 --debug_NB
-             run make_metallicity_sfr_maps.py --id 2145 --Zdiag N2 --plot_met_sfr --snr_cut 3
-             run make_metallicity_sfr_maps.py --id 2145 --Zdiag R3 --Zbranch low --use_C25 --plot_met_sfr --snr_cut 3
+             run make_metallicity_sfr_maps.py --id 8512 --Zdiag NB --plot_metallicity --snr_cut 3 --debug_NB
+             run make_metallicity_sfr_maps.py --id 8512 --Zdiag R3 --plot_all_quant --snr_cut 3
+             run make_metallicity_sfr_maps.py --id 8512 --Zdiag R3 --plot_met_sfr --snr_cut 3
+             run make_metallicity_sfr_maps.py --id 8512 --Zdiag R3 --plot_sfr --snr_cut 3
+             run make_metallicity_sfr_maps.py --id 8512 --Zdiag R3 --plot_ebv --snr_cut 3
+             run make_metallicity_sfr_maps.py --id 8512 --Zdiag R3 --Zbranch low --use_C25 --plot_met_sfr --snr_cut 3
 '''
 
 from header import *
@@ -295,7 +298,7 @@ def get_Z_C19(fit_results, args):
     '''
     # ------getting appropriate emission lines and calibration coefficients--------------
     if args.Zdiag == 'R3':
-        line_map_arr, line_int_arr = get_emission_line_maps(fit_results, ['OIII-5007', 'H-beta'], args, dered=False)
+        line_map_arr, line_int_arr = get_emission_line_maps(fit_results, ['OIII-5007', 'H-beta'], args)
         if line_map_arr is None: return None, ufloat(np.nan, np.nan)
         
         ratio_map = take_safe_log_ratio(line_map_arr[0], line_map_arr[1])
@@ -512,10 +515,10 @@ def compute_Z_NB(line_label_array, line_waves_array, line_flux_array, args):
     for index in range(npixels):
         this_ID = IDs_array[index]
         if net_mask_array[index]: # no need to calculate for those pixels that are already masked
-            print(f'Skipping NB for masked pixel {this_ID} ({index + 1}/{npixels})..')
+            print(f'Skipping NB for masked pixel {this_ID} ({index + 1}/{npixels})..\n')
             logOH = ufloat(np.nan, np.nan)
         elif this_ID in logOH_dict_unique_IDs.keys():
-            print(f'Skipping NB due to existing measurement from unique ID {this_ID} ({index + 1}/{npixels})..')
+            print(f'Skipping NB due to existing measurement from unique ID {this_ID} ({index + 1}/{npixels})..\n')
             logOH = logOH_dict_unique_IDs[this_ID]
         else:
             start_time4 = datetime.now()
@@ -523,6 +526,7 @@ def compute_Z_NB(line_label_array, line_waves_array, line_flux_array, args):
             # ------getting all line fluxes-------------
             obs_fluxes = obs_flux_array[:,index]
             obs_errs = obs_err_array[:, index]
+            print(f'\tDeb529: binID {this_ID} ({index + 1}/{npixels}): initally nlines={len(obs_fluxes)}, {dict(zip(line_label_array, obs_fluxes))}') ##
 
             # ------discarding lines with negative fluxes-------------
             good_obs = (obs_fluxes > 0) & (obs_errs >= 0)
@@ -548,7 +552,7 @@ def compute_Z_NB(line_label_array, line_waves_array, line_flux_array, args):
                         }
 
                 # -------running NB--------------
-                print(f'Deb1576: binID {this_ID} ({index + 1}/{npixels}): nlines={len(obs_fluxes)}, {dict(zip(line_labels, obs_fluxes))}, norm_line = {norm_line}, dereddening on the fly? {dered}') ##
+                print(f'\tDeb555: binID {this_ID} ({index + 1}/{npixels}): finally nlines={len(obs_fluxes)}, {dict(zip(line_labels, obs_fluxes))}, norm_line = {norm_line}, dereddening on the fly? {dered}') ##
                 Result = NB_Model_HII(obs_fluxes, obs_errs, line_labels, **kwargs)
 
                 # -------estimating the resulting logOH, and associated uncertainty-----------
@@ -559,10 +563,10 @@ def compute_Z_NB(line_label_array, line_waves_array, line_flux_array, args):
                 logOH_err = np.mean([logOH_est - logOH_low, logOH_high - logOH_est])
                 logOH = ufloat(logOH_est, logOH_err)
                 
-                print(f'Ran NB for unique ID {this_ID} ({counter + 1} out of {len(unique_IDs_array)}) with {len(obs_fluxes)} good fluxes in {timedelta(seconds=(datetime.now() - start_time4).seconds)}')            
+                print(f'Ran NB for unique ID {this_ID} ({counter + 1} out of {len(unique_IDs_array)}) with {len(obs_fluxes)} good fluxes in {timedelta(seconds=(datetime.now() - start_time4).seconds)}\n')            
             else:
                 logOH = ufloat(np.nan, np.nan)
-                print(f'Could not run NB for unique ID {this_ID} ({counter + 1} out of {len(unique_IDs_array)}) with only {len(obs_fluxes)} good fluxes')
+                print(f'Could not run NB for unique ID {this_ID} ({counter + 1} out of {len(unique_IDs_array)}) with only {len(obs_fluxes)} good fluxes\n')
 
             counter += 1
             logOH_dict_unique_IDs.update({this_ID: logOH}) # updating to unique ID dictionary once logOH has been calculated for this unique ID
@@ -919,6 +923,11 @@ if __name__ == "__main__":
     #logOH_min, logOH_max = None, None
     log_sfr_min, log_sfr_max = -4, 1
     
+    show_flux_log = True
+    if show_flux_log: cmin, cmax, ncbins = -21, -18, 6
+    else: cmin, cmax, ncbins = 0, 1e-18, 4
+    flux_cmap = 'cividis'
+    
     # -------------setup directories and global variables----------------
     cube_fits_dir = args.input_dir / 'cubes'
     maps_fits_dir = args.output_dir / 'maps'
@@ -928,8 +937,9 @@ if __name__ == "__main__":
 
     catalog_file = args.input_dir / 'redshifts.dat'
     tie_vdisp_text = '_tie_vdisp' if args.tie_vdisp else ''
-    snr_cut_text = f'_snr{args.snr_cut}'
-    Z_SFR_slope_file = args.output_dir / 'catalogs' / f'Z_{args.Zdiag}_SFR_slopes{tie_vdisp_text}{snr_cut_text}.csv'
+    snr_cut_text = f'_snr{args.snr_cut}' if args.snr_cut is not None else ''
+    dered_text = f'_nodered' if args.nodered else ''
+    Z_SFR_slope_file = args.output_dir / 'catalogs' / f'Z_{args.Zdiag}_SFR_slopes{tie_vdisp_text}{snr_cut_text}{dered_text}.csv'
 
     # ----------------reading in catalog---------------------
     df_imp_lines = get_important_lines(args)
@@ -951,7 +961,7 @@ if __name__ == "__main__":
         # ------determining directories and filenames---------
         args.cube_fits_file = cube_fits_dir / f'cube_square_medians_{args.id:d}_hdr_rect_err.fits'
         args.maps_fits_file = maps_fits_dir / f'{args.id:05d}{tie_vdisp_text}.maps.fits'
-        args.quants_fits_file = quants_fits_dir / f'{args.id:05d}_Zdiag_{args.Zdiag}{tie_vdisp_text}{snr_cut_text}.quants.fits'
+        args.quants_fits_file = quants_fits_dir / f'{args.id:05d}_Zdiag_{args.Zdiag}{tie_vdisp_text}{snr_cut_text}{dered_text}.quants.fits'
 
         try:
             # -----------checking if gaps in cube coincide with important lines--------------
@@ -960,41 +970,108 @@ if __name__ == "__main__":
                 print(f'\n\t{unreliable_lines} lie in detector gap for object {args.id}, therefore not proceeding with fitting; continuing to next object')
                 continue
 
-            # ---------measuring the various quantitites--------
+            # -----------read in the emission line maps--------------
+            fit_results, spatial_header = read_line_maps_fits(args.maps_fits_file, args)
+            wcs = pywcs.WCS(spatial_header)
+
+            args.available_lines = list(fit_results.keys())
+            if 'H-alpha' not in args.available_lines:
+                print(f'ID {args.id} (z={args.z:.2f}) does not have H-alpha, so skipping it..')
+                continue
+            if 'H-beta' not in args.available_lines:
+                print(f'ID {args.id} (z={args.z:.2f}) does not have H-beta, so skipping it..')
+                continue
+
+            args.EB_V_map, args.EB_V_int = get_EB_V(fit_results, args)
+
+            # -----------computing various quantities--------------
             if not os.path.exists(args.quants_fits_file) or args.clobber:
-                # -----------read in the emission line maps--------------
-                fit_results, spatial_header = read_line_maps_fits(args.maps_fits_file, args)
-                wcs = pywcs.WCS(spatial_header)
-
-                args.available_lines = list(fit_results.keys())
-                if 'H-alpha' not in args.available_lines:
-                    print(f'ID {args.id} (z={args.z:.2f}) does not have H-alpha, so skipping it..')
-                    continue
-                if 'H-beta' not in args.available_lines:
-                    print(f'ID {args.id} (z={args.z:.2f}) does not have H-beta, so skipping it..')
-                    continue
-
-                args.EB_V_map, args.EB_V_int = get_EB_V(fit_results, args)
-
-                # -----------computing various quantities--------------
                 quant_maps = compute_quant_maps(fit_results, args)
-
-                # -----------save the quanttity maps in fits file-------------
-                save_quant_maps_fits(quant_maps, args.quants_fits_file, wcs, args)
+                save_quant_maps_fits(quant_maps, args.quants_fits_file, wcs, args) # save the quanttity maps in fits file
             else:
                 quant_maps, spatial_header = read_quant_maps_fits(args.quants_fits_file)
             
-            # --------plot the qunatity maps-------------
-            if args.plot_metallicity:
-                fig, ax = plt.subplots(1, figsize=(8, 8), layout='constrained')
+            # --------plot EB_V and line maps-------------
+            if args.plot_ebv:
+                lines_to_plot = ['H-beta', 'H-alpha']
+                fig, axes = plt.subplots(1, len(lines_to_plot) + 1, figsize=(8, 4), layout='constrained')
+
+                line_map_arr, line_int_arr = get_emission_line_maps(fit_results, lines_to_plot, args)
                 
-                ax = plot_quant_map(ax, 'logOH', quant_maps, args, cmap='cividis', takelog=False, vmin=logOH_min, vmax=logOH_max, hide_cbar=False)
+                # ------------plot linemap--------------
+                for index, line_map in enumerate(line_map_arr):
+                    fluxmap = unp.nominal_values(line_map.data)
+                    axes[index] = plot_2D_map(fluxmap, axes[index], f'{lines_to_plot[index]}', args, cmap=flux_cmap, takelog=show_flux_log, vmin=cmin, vmax=cmax, hide_xaxis=False, hide_yaxis=index)
+
+                axes[-1] = plot_2D_map(unp.nominal_values(args.EB_V_map), axes[-1], f'E(B-V)', args, cmap='plasma', takelog=False, vmin=None, vmax=None, hide_xaxis=False, hide_yaxis=True, hide_cbar=False)
                 
                 fig.text(0.1, 0.98, f'ID {args.id}', fontsize=args.fontsize, c='k', ha='left', va='top')
-                save_fig(fig, args.fig_dir, f'{args.id}_metallicity_{args.Zdiag}_maps{snr_cut_text}.png', args)    
+                save_fig(fig, args.fig_dir, f'{args.id}_EB_V_maps{tie_vdisp_text}{snr_cut_text}{dered_text}.png', args)    
 
+            # --------plot SFR and line maps-------------
+            if args.plot_sfr:
+                lines_to_plot = ['H-beta', 'H-alpha']
+                fig, axes = plt.subplots(1, len(lines_to_plot) + 1, figsize=(8, 4), layout='constrained')
+
+                line_map_arr, line_int_arr = get_emission_line_maps(fit_results, lines_to_plot, args)
+                
+                # ------------plot linemap--------------
+                for index, line_map in enumerate(line_map_arr):
+                    fluxmap = unp.nominal_values(line_map.data)
+                    axes[index] = plot_2D_map(fluxmap, axes[index], f'{lines_to_plot[index]}', args, cmap=flux_cmap, takelog=show_flux_log, vmin=cmin, vmax=cmax, hide_xaxis=False, hide_yaxis=index)
+
+                axes[-1] = plot_quant_map(axes[-1], 'sfr', quant_maps, args, cmap='Blues', takelog=True, vmin=log_sfr_min, vmax=log_sfr_max, hide_xaxis=False, hide_yaxis=True, hide_cbar=False)
+                
+                fig.text(0.1, 0.98, f'ID {args.id}', fontsize=args.fontsize, c='k', ha='left', va='top')
+                save_fig(fig, args.fig_dir, f'{args.id}_SFR_maps{tie_vdisp_text}{snr_cut_text}{dered_text}.png', args)    
+
+            # --------plot metallicity and line maps-------------
+            if args.plot_metallicity:
+                lines_to_plot_dict = {'NB': ['OIII-5007', 'H-beta', 'H-alpha', 'NII-6584'],\
+                                      'R3': ['OIII-5007', 'H-beta'],\
+                                      'N2': ['NII-6584', 'H-alpha'],\
+                                      'O3S2': ['OIII-5007', 'H-beta', 'SII-6717', 'SII-6730', 'H-alpha'],\
+                                      'S2': ['SII-6717', 'SII-6730', 'H-alpha'],\
+                                      }
+                lines_to_plot = lines_to_plot_dict[args.Zdiag]
+                fig, axes = plt.subplots(1, len(lines_to_plot) + 1, figsize=(3 * (len(lines_to_plot) + 1), 4), layout='constrained')
+
+                line_map_arr, line_int_arr = get_emission_line_maps(fit_results, lines_to_plot, args)
+                
+                # ------------plot linemap--------------
+                for index, line_map in enumerate(line_map_arr):
+                    fluxmap = unp.nominal_values(line_map.data)
+                    axes[index] = plot_2D_map(fluxmap, axes[index], f'{lines_to_plot[index]}', args, cmap=flux_cmap, takelog=show_flux_log, vmin=cmin, vmax=cmax, hide_xaxis=False, hide_yaxis=index)
+
+                axes[-1] = plot_quant_map(axes[-1], 'logOH', quant_maps, args, cmap='viridis', takelog=False, vmin=logOH_min, vmax=logOH_max, hide_xaxis=False, hide_yaxis=True, hide_cbar=False)
+                
+                fig.text(0.1, 0.98, f'ID {args.id}', fontsize=args.fontsize, c='k', ha='left', va='top')
+                save_fig(fig, args.fig_dir, f'{args.id}_metallicity_{args.Zdiag}_maps{tie_vdisp_text}{snr_cut_text}{dered_text}.png', args)    
+
+            # -------plot metallicity and SFR maps and their correlation------------
             if args.plot_met_sfr:
-                fig, axes = plt.subplots(1, 5, figsize=(14, 4.5))
+                fig, axes = plt.subplots(1, 3, figsize=(9, 4.5))
+                fig.subplots_adjust(left=0.08, right=0.98, bottom=0.12, top=0.98, wspace=0.5)
+                
+                # -----------gettign logOH and SFR maps------------------
+                axes[0] = plot_quant_map(axes[0], 'logOH', quant_maps, args, cmap='viridis', takelog=False, vmin=logOH_min, vmax=logOH_max, hide_yaxis=False, hide_cbar=False)
+                axes[1] = plot_quant_map(axes[1], 'sfr', quant_maps, args, cmap='Blues', takelog=True, vmin=log_sfr_min, vmax=log_sfr_max, hide_yaxis=False, hide_cbar=False)
+                
+                # ------plotting logOH vs SFR----------------
+                axes[2], linefit = plot_met_sfr_corr(axes[2], quant_maps, args, color='salmon', log_sfr_min=log_sfr_min, log_sfr_max=log_sfr_max, logOH_min=logOH_min, logOH_max=logOH_max)
+                axes[2].set_aspect('auto')
+                save_fig(fig, args.fig_dir, f'{args.id}_metallicity_{args.Zdiag}_SFR_corr{tie_vdisp_text}{snr_cut_text}{dered_text}.png', args) 
+
+                # -------appending line fit to output dataframe-----------
+                if args.do_all_obj:
+                    obj = obj.to_dict()
+                    obj.update({'logZ_logSFR_slope': linefit[0].n, 'logZ_logSFR_slope_u': linefit[0].s, 'logZ_logSFR_cen': linefit[1].n, 'logZ_logSFR_cen_u': linefit[1].s})
+                    obj.update(vdisp_stats)
+                    output_rows_list.append(obj)
+
+            # --------plot RGB and metallicity and SFR and dispersion maps and correlation-------------
+            elif args.plot_all_quant:
+                fig, axes = plt.subplots(1, 4, figsize=(14, 4.5))
                 fig.subplots_adjust(left=0.06, right=0.98, bottom=0.12, top=0.98, wspace=0.5)
                 
                 # -----------gettign RGB image------------------
@@ -1044,7 +1121,7 @@ if __name__ == "__main__":
 
                 # ------plotting logOH vs SFR----------------
                 axes[-1], linefit = plot_met_sfr_corr(axes[-1], quant_maps, args, color='salmon', log_sfr_min=log_sfr_min, log_sfr_max=log_sfr_max, logOH_min=logOH_min, logOH_max=logOH_max)
-                save_fig(fig, args.fig_dir, f'{args.id}_metallicity_{args.Zdiag}_SFR_corr{snr_cut_text}.png', args) 
+                save_fig(fig, args.fig_dir, f'{args.id}_all_quant_Zdiag_{args.Zdiag}{tie_vdisp_text}{snr_cut_text}{dered_text}.png', args) 
 
                 # -------appending line fit to output dataframe-----------
                 if args.do_all_obj:
@@ -1060,7 +1137,7 @@ if __name__ == "__main__":
             pass
         
     # ------------writing out resulting dataframe-----------------
-    if args.do_all_obj and args.plot_met_sfr:
+    if args.do_all_obj and (args.plot_met_sfr or args.plot_all_quant):
         df_out = pd.DataFrame(output_rows_list)
 
         # --------computing tmix---------

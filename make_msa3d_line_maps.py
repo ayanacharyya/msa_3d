@@ -9,6 +9,7 @@
              run make_msa3d_line_maps.py --id 2145 --plot_rgb
              run make_msa3d_line_maps.py --id 2145 --debug_linefit 15,12
              run make_msa3d_line_maps.py --do_all_obj --save_linefit_plot --plot_line_flux_maps --plot_line_quant_maps --ncores 6
+             run make_msa3d_line_maps.py --do_all_obj --make_speccat --snr_cut 3
 '''
 
 from header import *
@@ -500,10 +501,12 @@ def get_emission_line_map(line, fit_results, args, log_flux_min=-21, log_flux_ma
     # ---------getting the spatillay resolved flux---------------
     line_map = fit_results[line]['flux']
     line_map_err = fit_results[line]['flux_err']
-    snr_map = line_map / line_map_err
 
     # --------curtailing to real values only-------------------
-    mask = ~(np.isfinite(line_map)) | (snr_map < args.snr_cut)
+    mask = ~(np.isfinite(line_map))
+    if args.snr_cut is not None:
+        snr_map = line_map / line_map_err
+        mask = mask | (snr_map < args.snr_cut)
     if log_flux_max is not None: mask = mask | (line_map > 10 ** log_flux_max)
     if log_flux_min is not None: mask = mask | (line_map < 10 ** log_flux_min)
     line_map = np.where(mask, np.nan, line_map)
@@ -608,7 +611,7 @@ def plot_line_flux_maps(fit_results, args):
     '''
     # --------------setting up figures------------------------
     show_log = True
-    nrow, ncol = 2, 5
+    nrow, ncol = 2, 4
     if show_log: cmin, cmax, ncbins = -21, -18, 6
     else: cmin, cmax, ncbins = 0, 1e-18, 4
     cmin_snr, cmax_snr = 1, 10
@@ -620,21 +623,24 @@ def plot_line_flux_maps(fit_results, args):
     
     # ----------plot line maps--------------------
     available_lines = list(fit_results.keys())
-    for index, fitted_line in enumerate(available_lines):
+    for index, fitted_line in enumerate(args.line_list):
         row = index // ncol
         col = index % ncol
+        if fitted_line not in available_lines:
+            axes[row, col].set_visible(False)
+            continue
         
         # ------------extract linemap from fit_results dict--------------
         line_map, _  = get_emission_line_map(fitted_line, fit_results, args, log_flux_min=None, log_flux_max=None, dered=False)
         fluxmap = unp.nominal_values(line_map.data)
 
         # ------------plot linemap--------------
-        axes[row, col] = plot_2D_map(fluxmap, axes[row, col], f'{available_lines[index]}', args, cmap=cmap, takelog=show_log, vmin=cmin, vmax=cmax, hide_xaxis=row < nrow - 1, hide_yaxis=col > 0)
+        axes[row, col] = plot_2D_map(fluxmap, axes[row, col], f'{args.line_list[index]}', args, cmap=cmap, takelog=show_log, vmin=cmin, vmax=cmax, hide_xaxis=row < nrow - 1, hide_yaxis=col > 0)
 
         if args.plot_snr:
             errmap = unp.std_devs(line_map.data)
             snrmap = fluxmap / errmap
-            axes_snr[row, col] = plot_2D_map(snrmap, axes_snr[row, col], f'{available_lines[index]}: SNR', args, cmap=cmap, takelog=False, vmin=cmin_snr, vmax=cmax_snr, hide_xaxis=row < nrow - 1, hide_yaxis=col > 0)
+            axes_snr[row, col] = plot_2D_map(snrmap, axes_snr[row, col], f'{args.line_list[index]}: SNR', args, cmap=cmap, takelog=False, vmin=cmin_snr, vmax=cmax_snr, hide_xaxis=row < nrow - 1, hide_yaxis=col > 0)
 
     # --------common colorbar------------------
     fig = make_colorbar_top(fig, axes, f'ID {args.id}: Log flux (ergs/s/cm^2)' if show_log else f'ID {args.id}: Flux (ergs/s/cm^2)', cmap, cmin, cmax, ncbins, args.fontsize, aspect=60)
@@ -813,13 +819,17 @@ if __name__ == "__main__":
 
     catalog_file = args.input_dir / 'redshifts.dat'
     tie_vdisp_text = '_tie_vdisp' if args.tie_vdisp else ''
-    snr_cut_text = f'_snr{args.snr_cut}'
+    snr_cut_text = f'_snr{args.snr_cut}' if args.snr_cut is not None else ''
 
     # ----------------reading in catalog---------------------
     df_imp_lines = get_important_lines(args)
     df = read_msa3d_catalog(catalog_file)
     if not args.do_all_obj:
         df = df[df['id'].isin(args.id_arr)].reset_index(drop=True)
+
+    # -------------setting up dataframe for spec cat if needed---------------
+    if args.make_speccat:
+        df_spec = pd.DataFrame(columns = np.hstack([['id'], np.hstack([[f'log_{item}_flux', f'log_{item}_err', f'{item}_snr'] for item in args.line_list])]))
 
     # ----------------looping over the objects in this chunk-------------
     for index, obj in df.iterrows():
@@ -871,7 +881,27 @@ if __name__ == "__main__":
             else:
                 rgb_image = cut_2Dmap(rgb_image, args.upto_pix)
                 ax = plot_rgb(rgb_image, args)
+        # ------------make spec cat------------------------
+        if args.make_speccat:
+            available_lines = list(fit_results.keys())
+            this_row_dict = {'id': args.id}
+            for item in args.line_list:
+                this_row_dict.update({f'log_{item}_flux': np.nan, f'log_{item}_err': np.nan, f'{item}_snr': np.nan})
+                if item in available_lines:
+                    _, line_int  = get_emission_line_map(item, fit_results, args, log_flux_min=None, log_flux_max=None, dered=False)
+                    if line_int.s > 0:
+                        line_snr = line_int.n / line_int.s
+                        log_line_int = unp.log10(line_int).tolist()
+                        this_row_dict.update({f'log_{item}_flux': log_line_int.n, f'log_{item}_err': log_line_int.s, f'{item}_snr': line_snr})
+                    else:
+                        this_row_dict.update({f'log_{item}_flux': np.log10(line_int.n), f'log_{item}_err': np.nan, f'{item}_snr': np.nan})
 
+            df_spec = pd.concat([df_spec, pd.DataFrame([this_row_dict])], ignore_index=True)
+            
         print(f'\nCompleted ID {args.id} in {timedelta(seconds=(datetime.now() - start_time2).seconds)}, {len(df) - index - 1} to go!')
    
+    # -----------write sepccat to file----------
+    if args.make_speccat and args.do_all_obj:
+        df_spec.to_csv(args.output_dir / 'catalogs' / f'speccat{tie_vdisp_text}{snr_cut_text}.csv', index=None)
+    
     print(f'Completed in {timedelta(seconds=(datetime.now() - start_time).seconds)}')
