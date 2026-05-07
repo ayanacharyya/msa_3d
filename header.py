@@ -78,12 +78,12 @@ from matplotlib import pyplot as plt
 HOME = Path.home()
 
 rest_wave_dict = {#'OIII-4363': 4363.209,
-                  'H-beta': 4861.333,
+                  'H-beta': 4861.3,
                   'OIII-4959': 4958.911,
                   'OIII-5007': 5008.239,
                   #'OI-6302': 6302.047,
                   'NII-6548': 6549.86,
-                  'H-alpha': 6564.632,
+                  'H-alpha': 6562.8,
                   'NII-6584': 6585.273,
                   'SII-6717': 6718.30,
                   'SII-6730': 6732.674,

@@ -963,179 +963,179 @@ if __name__ == "__main__":
         args.maps_fits_file = maps_fits_dir / f'{args.id:05d}{tie_vdisp_text}.maps.fits'
         args.quants_fits_file = quants_fits_dir / f'{args.id:05d}_Zdiag_{args.Zdiag}{tie_vdisp_text}{snr_cut_text}{dered_text}.quants.fits'
 
-        try:
-            # -----------checking if gaps in cube coincide with important lines--------------
-            _, _, _, _, _, unreliable_lines = get_ifu_cube(args.cube_fits_file, args=args, df_imp_lines=df_imp_lines)
-            if len(unreliable_lines) > 0:
-                print(f'\n\t{unreliable_lines} lie in detector gap for object {args.id}, therefore not proceeding with fitting; continuing to next object')
-                continue
+        #try:
+        # -----------checking if gaps in cube coincide with important lines--------------
+        _, _, _, _, _, unreliable_lines = get_ifu_cube(args.cube_fits_file, args=args, df_imp_lines=df_imp_lines)
+        if len(unreliable_lines) > 0:
+            print(f'\n\t{unreliable_lines} lie in detector gap for object {args.id}, therefore not proceeding with fitting; continuing to next object')
+            continue
 
-            # -----------read in the emission line maps--------------
-            fit_results, spatial_header = read_line_maps_fits(args.maps_fits_file, args)
-            wcs = pywcs.WCS(spatial_header)
+        # -----------read in the emission line maps--------------
+        fit_results, spatial_header = read_line_maps_fits(args.maps_fits_file, args)
+        wcs = pywcs.WCS(spatial_header)
 
-            args.available_lines = list(fit_results.keys())
-            if 'H-alpha' not in args.available_lines:
-                print(f'ID {args.id} (z={args.z:.2f}) does not have H-alpha, so skipping it..')
-                continue
-            if 'H-beta' not in args.available_lines:
-                print(f'ID {args.id} (z={args.z:.2f}) does not have H-beta, so skipping it..')
-                continue
+        args.available_lines = list(fit_results.keys())
+        if 'H-alpha' not in args.available_lines:
+            print(f'ID {args.id} (z={args.z:.2f}) does not have H-alpha, so skipping it..')
+            continue
+        if 'H-beta' not in args.available_lines:
+            print(f'ID {args.id} (z={args.z:.2f}) does not have H-beta, so skipping it..')
+            continue
 
-            args.EB_V_map, args.EB_V_int = get_EB_V(fit_results, args)
+        args.EB_V_map, args.EB_V_int = get_EB_V(fit_results, args)
 
-            # -----------computing various quantities--------------
-            if not os.path.exists(args.quants_fits_file) or args.clobber:
-                quant_maps = compute_quant_maps(fit_results, args)
-                save_quant_maps_fits(quant_maps, args.quants_fits_file, wcs, args) # save the quanttity maps in fits file
-            else:
-                quant_maps, spatial_header = read_quant_maps_fits(args.quants_fits_file)
+        # -----------computing various quantities--------------
+        if not os.path.exists(args.quants_fits_file) or args.clobber:
+            quant_maps = compute_quant_maps(fit_results, args)
+            save_quant_maps_fits(quant_maps, args.quants_fits_file, wcs, args) # save the quanttity maps in fits file
+        else:
+            quant_maps, spatial_header = read_quant_maps_fits(args.quants_fits_file)
+        
+        # --------plot EB_V and line maps-------------
+        if args.plot_ebv:
+            lines_to_plot = ['H-beta', 'H-alpha']
+            fig, axes = plt.subplots(1, len(lines_to_plot) + 1, figsize=(8, 4), layout='constrained')
+
+            line_map_arr, line_int_arr = get_emission_line_maps(fit_results, lines_to_plot, args)
             
-            # --------plot EB_V and line maps-------------
-            if args.plot_ebv:
-                lines_to_plot = ['H-beta', 'H-alpha']
-                fig, axes = plt.subplots(1, len(lines_to_plot) + 1, figsize=(8, 4), layout='constrained')
+            # ------------plot linemap--------------
+            for index, line_map in enumerate(line_map_arr):
+                fluxmap = unp.nominal_values(line_map.data)
+                axes[index] = plot_2D_map(fluxmap, axes[index], f'{lines_to_plot[index]}', args, cmap=flux_cmap, takelog=show_flux_log, vmin=cmin, vmax=cmax, hide_xaxis=False, hide_yaxis=index)
 
-                line_map_arr, line_int_arr = get_emission_line_maps(fit_results, lines_to_plot, args)
-                
-                # ------------plot linemap--------------
-                for index, line_map in enumerate(line_map_arr):
-                    fluxmap = unp.nominal_values(line_map.data)
-                    axes[index] = plot_2D_map(fluxmap, axes[index], f'{lines_to_plot[index]}', args, cmap=flux_cmap, takelog=show_flux_log, vmin=cmin, vmax=cmax, hide_xaxis=False, hide_yaxis=index)
+            axes[-1] = plot_2D_map(unp.nominal_values(args.EB_V_map), axes[-1], f'E(B-V)', args, cmap='plasma', takelog=False, vmin=None, vmax=None, hide_xaxis=False, hide_yaxis=True, hide_cbar=False)
+            
+            fig.text(0.1, 0.98, f'ID {args.id}', fontsize=args.fontsize, c='k', ha='left', va='top')
+            save_fig(fig, args.fig_dir, f'{args.id}_EB_V_maps{tie_vdisp_text}{snr_cut_text}{dered_text}.png', args)    
 
-                axes[-1] = plot_2D_map(unp.nominal_values(args.EB_V_map), axes[-1], f'E(B-V)', args, cmap='plasma', takelog=False, vmin=None, vmax=None, hide_xaxis=False, hide_yaxis=True, hide_cbar=False)
-                
-                fig.text(0.1, 0.98, f'ID {args.id}', fontsize=args.fontsize, c='k', ha='left', va='top')
-                save_fig(fig, args.fig_dir, f'{args.id}_EB_V_maps{tie_vdisp_text}{snr_cut_text}{dered_text}.png', args)    
+        # --------plot SFR and line maps-------------
+        if args.plot_sfr:
+            lines_to_plot = ['H-beta', 'H-alpha']
+            fig, axes = plt.subplots(1, len(lines_to_plot) + 1, figsize=(8, 4), layout='constrained')
 
-            # --------plot SFR and line maps-------------
-            if args.plot_sfr:
-                lines_to_plot = ['H-beta', 'H-alpha']
-                fig, axes = plt.subplots(1, len(lines_to_plot) + 1, figsize=(8, 4), layout='constrained')
+            line_map_arr, line_int_arr = get_emission_line_maps(fit_results, lines_to_plot, args)
+            
+            # ------------plot linemap--------------
+            for index, line_map in enumerate(line_map_arr):
+                fluxmap = unp.nominal_values(line_map.data)
+                axes[index] = plot_2D_map(fluxmap, axes[index], f'{lines_to_plot[index]}', args, cmap=flux_cmap, takelog=show_flux_log, vmin=cmin, vmax=cmax, hide_xaxis=False, hide_yaxis=index)
 
-                line_map_arr, line_int_arr = get_emission_line_maps(fit_results, lines_to_plot, args)
-                
-                # ------------plot linemap--------------
-                for index, line_map in enumerate(line_map_arr):
-                    fluxmap = unp.nominal_values(line_map.data)
-                    axes[index] = plot_2D_map(fluxmap, axes[index], f'{lines_to_plot[index]}', args, cmap=flux_cmap, takelog=show_flux_log, vmin=cmin, vmax=cmax, hide_xaxis=False, hide_yaxis=index)
+            axes[-1] = plot_quant_map(axes[-1], 'sfr', quant_maps, args, cmap='Blues', takelog=True, vmin=log_sfr_min, vmax=log_sfr_max, hide_xaxis=False, hide_yaxis=True, hide_cbar=False)
+            
+            fig.text(0.1, 0.98, f'ID {args.id}', fontsize=args.fontsize, c='k', ha='left', va='top')
+            save_fig(fig, args.fig_dir, f'{args.id}_SFR_maps{tie_vdisp_text}{snr_cut_text}{dered_text}.png', args)    
 
-                axes[-1] = plot_quant_map(axes[-1], 'sfr', quant_maps, args, cmap='Blues', takelog=True, vmin=log_sfr_min, vmax=log_sfr_max, hide_xaxis=False, hide_yaxis=True, hide_cbar=False)
-                
-                fig.text(0.1, 0.98, f'ID {args.id}', fontsize=args.fontsize, c='k', ha='left', va='top')
-                save_fig(fig, args.fig_dir, f'{args.id}_SFR_maps{tie_vdisp_text}{snr_cut_text}{dered_text}.png', args)    
+        # --------plot metallicity and line maps-------------
+        if args.plot_metallicity:
+            lines_to_plot_dict = {'NB': ['OIII-5007', 'H-beta', 'H-alpha', 'NII-6584'],\
+                                    'R3': ['OIII-5007', 'H-beta'],\
+                                    'N2': ['NII-6584', 'H-alpha'],\
+                                    'O3S2': ['OIII-5007', 'H-beta', 'SII-6717', 'SII-6730', 'H-alpha'],\
+                                    'S2': ['SII-6717', 'SII-6730', 'H-alpha'],\
+                                    }
+            lines_to_plot = lines_to_plot_dict[args.Zdiag]
+            fig, axes = plt.subplots(1, len(lines_to_plot) + 1, figsize=(3 * (len(lines_to_plot) + 1), 4), layout='constrained')
 
-            # --------plot metallicity and line maps-------------
-            if args.plot_metallicity:
-                lines_to_plot_dict = {'NB': ['OIII-5007', 'H-beta', 'H-alpha', 'NII-6584'],\
-                                      'R3': ['OIII-5007', 'H-beta'],\
-                                      'N2': ['NII-6584', 'H-alpha'],\
-                                      'O3S2': ['OIII-5007', 'H-beta', 'SII-6717', 'SII-6730', 'H-alpha'],\
-                                      'S2': ['SII-6717', 'SII-6730', 'H-alpha'],\
-                                      }
-                lines_to_plot = lines_to_plot_dict[args.Zdiag]
-                fig, axes = plt.subplots(1, len(lines_to_plot) + 1, figsize=(3 * (len(lines_to_plot) + 1), 4), layout='constrained')
+            line_map_arr, line_int_arr = get_emission_line_maps(fit_results, lines_to_plot, args)
+            
+            # ------------plot linemap--------------
+            for index, line_map in enumerate(line_map_arr):
+                fluxmap = unp.nominal_values(line_map.data)
+                axes[index] = plot_2D_map(fluxmap, axes[index], f'{lines_to_plot[index]}', args, cmap=flux_cmap, takelog=show_flux_log, vmin=cmin, vmax=cmax, hide_xaxis=False, hide_yaxis=index)
 
-                line_map_arr, line_int_arr = get_emission_line_maps(fit_results, lines_to_plot, args)
-                
-                # ------------plot linemap--------------
-                for index, line_map in enumerate(line_map_arr):
-                    fluxmap = unp.nominal_values(line_map.data)
-                    axes[index] = plot_2D_map(fluxmap, axes[index], f'{lines_to_plot[index]}', args, cmap=flux_cmap, takelog=show_flux_log, vmin=cmin, vmax=cmax, hide_xaxis=False, hide_yaxis=index)
+            axes[-1] = plot_quant_map(axes[-1], 'logOH', quant_maps, args, cmap='viridis', takelog=False, vmin=logOH_min, vmax=logOH_max, hide_xaxis=False, hide_yaxis=True, hide_cbar=False)
+            
+            fig.text(0.1, 0.98, f'ID {args.id}', fontsize=args.fontsize, c='k', ha='left', va='top')
+            save_fig(fig, args.fig_dir, f'{args.id}_metallicity_{args.Zdiag}_maps{tie_vdisp_text}{snr_cut_text}{dered_text}.png', args)    
 
-                axes[-1] = plot_quant_map(axes[-1], 'logOH', quant_maps, args, cmap='viridis', takelog=False, vmin=logOH_min, vmax=logOH_max, hide_xaxis=False, hide_yaxis=True, hide_cbar=False)
-                
-                fig.text(0.1, 0.98, f'ID {args.id}', fontsize=args.fontsize, c='k', ha='left', va='top')
-                save_fig(fig, args.fig_dir, f'{args.id}_metallicity_{args.Zdiag}_maps{tie_vdisp_text}{snr_cut_text}{dered_text}.png', args)    
+        # -------plot metallicity and SFR maps and their correlation------------
+        if args.plot_met_sfr:
+            fig, axes = plt.subplots(1, 3, figsize=(9, 4.5))
+            fig.subplots_adjust(left=0.08, right=0.98, bottom=0.12, top=0.98, wspace=0.5)
+            
+            # -----------gettign logOH and SFR maps------------------
+            axes[0] = plot_quant_map(axes[0], 'logOH', quant_maps, args, cmap='viridis', takelog=False, vmin=logOH_min, vmax=logOH_max, hide_yaxis=False, hide_cbar=False)
+            axes[1] = plot_quant_map(axes[1], 'sfr', quant_maps, args, cmap='Blues', takelog=True, vmin=log_sfr_min, vmax=log_sfr_max, hide_yaxis=False, hide_cbar=False)
+            
+            # ------plotting logOH vs SFR----------------
+            axes[2], linefit = plot_met_sfr_corr(axes[2], quant_maps, args, color='salmon', log_sfr_min=log_sfr_min, log_sfr_max=log_sfr_max, logOH_min=logOH_min, logOH_max=logOH_max)
+            axes[2].set_aspect('auto')
+            save_fig(fig, args.fig_dir, f'{args.id}_metallicity_{args.Zdiag}_SFR_corr{tie_vdisp_text}{snr_cut_text}{dered_text}.png', args) 
 
-            # -------plot metallicity and SFR maps and their correlation------------
-            if args.plot_met_sfr:
-                fig, axes = plt.subplots(1, 3, figsize=(9, 4.5))
-                fig.subplots_adjust(left=0.08, right=0.98, bottom=0.12, top=0.98, wspace=0.5)
-                
-                # -----------gettign logOH and SFR maps------------------
-                axes[0] = plot_quant_map(axes[0], 'logOH', quant_maps, args, cmap='viridis', takelog=False, vmin=logOH_min, vmax=logOH_max, hide_yaxis=False, hide_cbar=False)
-                axes[1] = plot_quant_map(axes[1], 'sfr', quant_maps, args, cmap='Blues', takelog=True, vmin=log_sfr_min, vmax=log_sfr_max, hide_yaxis=False, hide_cbar=False)
-                
-                # ------plotting logOH vs SFR----------------
-                axes[2], linefit = plot_met_sfr_corr(axes[2], quant_maps, args, color='salmon', log_sfr_min=log_sfr_min, log_sfr_max=log_sfr_max, logOH_min=logOH_min, logOH_max=logOH_max)
-                axes[2].set_aspect('auto')
-                save_fig(fig, args.fig_dir, f'{args.id}_metallicity_{args.Zdiag}_SFR_corr{tie_vdisp_text}{snr_cut_text}{dered_text}.png', args) 
+            # -------appending line fit to output dataframe-----------
+            if args.do_all_obj:
+                obj = obj.to_dict()
+                obj.update({'logZ_logSFR_slope': linefit[0].n, 'logZ_logSFR_slope_u': linefit[0].s, 'logZ_logSFR_cen': linefit[1].n, 'logZ_logSFR_cen_u': linefit[1].s})
+                obj.update(vdisp_stats)
+                output_rows_list.append(obj)
 
-                # -------appending line fit to output dataframe-----------
-                if args.do_all_obj:
-                    obj = obj.to_dict()
-                    obj.update({'logZ_logSFR_slope': linefit[0].n, 'logZ_logSFR_slope_u': linefit[0].s, 'logZ_logSFR_cen': linefit[1].n, 'logZ_logSFR_cen_u': linefit[1].s})
-                    obj.update(vdisp_stats)
-                    output_rows_list.append(obj)
+        # --------plot RGB and metallicity and SFR and dispersion maps and correlation-------------
+        elif args.plot_all_quant:
+            fig, axes = plt.subplots(1, 4, figsize=(14, 4.5))
+            fig.subplots_adjust(left=0.06, right=0.98, bottom=0.12, top=0.98, wspace=0.5)
+            
+            # -----------gettign RGB image------------------
+            fit_results, _ = read_line_maps_fits(args.maps_fits_file, args)
+            rgb_image = compute_rgb(fit_results, args, rlines='SII-6717,SII-6730', glines='H-alpha', blines='OIII-5007')
+            if type(rgb_image) == str:
+                axes[0] = plot_2D_map(np.zeros((msa_npix_x, msa_npix_y)) * np.nan, axes[0], f'{args.id}: {rgb_image}\nnot available', args, cmap='plasma', takelog=False)
+            else:
+                axes[0] = plot_2D_map(rgb_image, axes[0], f'{args.id}: RGB', args, cmap='plasma', takelog=False)
 
-            # --------plot RGB and metallicity and SFR and dispersion maps and correlation-------------
-            elif args.plot_all_quant:
-                fig, axes = plt.subplots(1, 4, figsize=(14, 4.5))
-                fig.subplots_adjust(left=0.06, right=0.98, bottom=0.12, top=0.98, wspace=0.5)
-                
-                # -----------gettign RGB image------------------
-                fit_results, _ = read_line_maps_fits(args.maps_fits_file, args)
-                rgb_image = compute_rgb(fit_results, args, rlines='SII-6717,SII-6730', glines='H-alpha', blines='OIII-5007')
-                if type(rgb_image) == str:
-                    axes[0] = plot_2D_map(np.zeros((msa_npix_x, msa_npix_y)) * np.nan, axes[0], f'{args.id}: {rgb_image}\nnot available', args, cmap='plasma', takelog=False)
-                else:
-                    axes[0] = plot_2D_map(rgb_image, axes[0], f'{args.id}: RGB', args, cmap='plasma', takelog=False)
+            # -----------gettign logOH and SFR maps------------------
+            axes[1] = plot_quant_map(axes[1], 'logOH', quant_maps, args, cmap='cividis', takelog=False, vmin=logOH_min, vmax=logOH_max, hide_yaxis=True, hide_cbar=False)
+            axes[2] = plot_quant_map(axes[2], 'sfr', quant_maps, args, cmap='Blues', takelog=True, vmin=log_sfr_min, vmax=log_sfr_max, hide_yaxis=True, hide_cbar=False)
+            
+            # ----------getting Halpha kinematics from fit--------------
+            line, param = 'H-alpha', 'sigma'
+            fit_results, _ = read_line_maps_fits(args.maps_fits_file, args)
+            flux_map, _ = get_emission_line_map(line, fit_results, args, dered=False)
+            vdisp_map = np.where(flux_map.mask, np.nan, fit_results[line][param])
+            vdisp_map_err = np.where(flux_map.mask, np.nan, fit_results[line][f'{param}_err'])
+            
+            axes[3] = plot_2D_map(vdisp_map, axes[3], r'$\sigma_{\rm vel}$ (km/s)', args, cmap='plasma', takelog=False, vmin=0, vmax=100, hide_xaxis=False, hide_yaxis=True, hide_cbar=False)
+            
+            # ---------cutting to only the relevant area of the 2D map-----------
+            flux_map_cut = cut_2Dmap(unp.nominal_values(flux_map.data), args.upto_pix)
+            vdisp_map_cut = cut_2Dmap(vdisp_map, args.upto_pix)
+            vdisp_map_err_cut = cut_2Dmap(vdisp_map_err, args.upto_pix)
+            
+            # -----------computing weighted mean---------------
+            mask = np.isnan(flux_map_cut) | np.isnan(vdisp_map_cut) | np.isnan(vdisp_map_err_cut)
+            vdisp = np.ma.compressed(np.ma.masked_where(mask, vdisp_map_cut))
+            vdisp_err = np.ma.compressed(np.ma.masked_where(mask, vdisp_map_err_cut))
+            weights = np.ma.compressed(np.ma.masked_where(mask, flux_map_cut))
 
-                # -----------gettign logOH and SFR maps------------------
-                axes[1] = plot_quant_map(axes[1], 'logOH', quant_maps, args, cmap='cividis', takelog=False, vmin=logOH_min, vmax=logOH_max, hide_yaxis=True, hide_cbar=False)
-                axes[2] = plot_quant_map(axes[2], 'sfr', quant_maps, args, cmap='Blues', takelog=True, vmin=log_sfr_min, vmax=log_sfr_max, hide_yaxis=True, hide_cbar=False)
-                
-                # ----------getting Halpha kinematics from fit--------------
-                line, param = 'H-alpha', 'sigma'
-                fit_results, _ = read_line_maps_fits(args.maps_fits_file, args)
-                flux_map, _ = get_emission_line_map(line, fit_results, args, dered=False)
-                vdisp_map = np.where(flux_map.mask, np.nan, fit_results[line][param])
-                vdisp_map_err = np.where(flux_map.mask, np.nan, fit_results[line][f'{param}_err'])
-                
-                axes[3] = plot_2D_map(vdisp_map, axes[3], r'$\sigma_{\rm vel}$ (km/s)', args, cmap='plasma', takelog=False, vmin=0, vmax=100, hide_xaxis=False, hide_yaxis=True, hide_cbar=False)
-                
-                # ---------cutting to only the relevant area of the 2D map-----------
-                flux_map_cut = cut_2Dmap(unp.nominal_values(flux_map.data), args.upto_pix)
-                vdisp_map_cut = cut_2Dmap(vdisp_map, args.upto_pix)
-                vdisp_map_err_cut = cut_2Dmap(vdisp_map_err, args.upto_pix)
-                
-                # -----------computing weighted mean---------------
-                mask = np.isnan(flux_map_cut) | np.isnan(vdisp_map_cut) | np.isnan(vdisp_map_err_cut)
-                vdisp = np.ma.compressed(np.ma.masked_where(mask, vdisp_map_cut))
-                vdisp_err = np.ma.compressed(np.ma.masked_where(mask, vdisp_map_err_cut))
-                weights = np.ma.compressed(np.ma.masked_where(mask, flux_map_cut))
+            weighted_mean = np.sum(vdisp * weights) / np.sum(weights)
+            mean_err = np.sqrt(np.sum((weights * vdisp_err)**2)) / np.sum(weights)
 
-                weighted_mean = np.sum(vdisp * weights) / np.sum(weights)
-                mean_err = np.sqrt(np.sum((weights * vdisp_err)**2)) / np.sum(weights)
+            # -----------computing weighted percentiles---------------
+            sorter = np.argsort(vdisp)
+            vdisp = vdisp[sorter]
+            weights = weights[sorter]
+            cum_weights = np.cumsum(weights) - 0.5 * weights
+            cum_weights /= np.sum(weights)
+            
+            percentiles = np.interp([0.16, 0.50, 0.84], cum_weights, vdisp)
+            vdisp_stats = {'vdisp_mean':weighted_mean, 'vdisp_mean_u':mean_err, 'vdisp_16':percentiles[0], 'vdisp_50':percentiles[1], 'vdisp_84':percentiles[2]}
 
-                # -----------computing weighted percentiles---------------
-                sorter = np.argsort(vdisp)
-                vdisp = vdisp[sorter]
-                weights = weights[sorter]
-                cum_weights = np.cumsum(weights) - 0.5 * weights
-                cum_weights /= np.sum(weights)
-                
-                percentiles = np.interp([0.16, 0.50, 0.84], cum_weights, vdisp)
-                vdisp_stats = {'vdisp_mean':weighted_mean, 'vdisp_mean_u':mean_err, 'vdisp_16':percentiles[0], 'vdisp_50':percentiles[1], 'vdisp_84':percentiles[2]}
+            # ------plotting logOH vs SFR----------------
+            axes[-1], linefit = plot_met_sfr_corr(axes[-1], quant_maps, args, color='salmon', log_sfr_min=log_sfr_min, log_sfr_max=log_sfr_max, logOH_min=logOH_min, logOH_max=logOH_max)
+            save_fig(fig, args.fig_dir, f'{args.id}_all_quant_Zdiag_{args.Zdiag}{tie_vdisp_text}{snr_cut_text}{dered_text}.png', args) 
 
-                # ------plotting logOH vs SFR----------------
-                axes[-1], linefit = plot_met_sfr_corr(axes[-1], quant_maps, args, color='salmon', log_sfr_min=log_sfr_min, log_sfr_max=log_sfr_max, logOH_min=logOH_min, logOH_max=logOH_max)
-                save_fig(fig, args.fig_dir, f'{args.id}_all_quant_Zdiag_{args.Zdiag}{tie_vdisp_text}{snr_cut_text}{dered_text}.png', args) 
+            # -------appending line fit to output dataframe-----------
+            if args.do_all_obj:
+                obj = obj.to_dict()
+                obj.update({'logZ_logSFR_slope': linefit[0].n, 'logZ_logSFR_slope_u': linefit[0].s, 'logZ_logSFR_cen': linefit[1].n, 'logZ_logSFR_cen_u': linefit[1].s})
+                obj.update(vdisp_stats)
+                output_rows_list.append(obj)
 
-                # -------appending line fit to output dataframe-----------
-                if args.do_all_obj:
-                    obj = obj.to_dict()
-                    obj.update({'logZ_logSFR_slope': linefit[0].n, 'logZ_logSFR_slope_u': linefit[0].s, 'logZ_logSFR_cen': linefit[1].n, 'logZ_logSFR_cen_u': linefit[1].s})
-                    obj.update(vdisp_stats)
-                    output_rows_list.append(obj)
-
-            print(f'\nCompleted ID {args.id} in {timedelta(seconds=(datetime.now() - start_time2).seconds)}, {len(df) - index - 1} to go!')
-         
+        print(f'\nCompleted ID {args.id} in {timedelta(seconds=(datetime.now() - start_time2).seconds)}, {len(df) - index - 1} to go!')
+        '''
         except Exception as e:
             print(f'Could not make plots for ID {args.id} because {e}')
             pass
-        
+        '''
     # ------------writing out resulting dataframe-----------------
     if args.do_all_obj and (args.plot_met_sfr or args.plot_all_quant):
         df_out = pd.DataFrame(output_rows_list)
