@@ -918,6 +918,7 @@ if __name__ == "__main__":
     if not args.keep: plt.close('all')
     args.fontfactor = 1.2
     args.id_arr = args.id
+    args.dered_in_NB = True
 
     logOH_min, logOH_max = 7.0, 9.0
     #logOH_min, logOH_max = None, None
