@@ -10,6 +10,8 @@
              run make_metallicity_sfr_maps.py --id 8512 --Zdiag R3 --plot_sfr --snr_cut 3
              run make_metallicity_sfr_maps.py --id 8512 --Zdiag R3 --plot_ebv --snr_cut 3
              run make_metallicity_sfr_maps.py --id 8512 --Zdiag R3 --Zbranch low --use_C25 --plot_met_sfr --snr_cut 3
+             run make_metallicity_sfr_maps.py --do_all_obj --Zdiag R3 --Zbranch low --use_C25 --plot_all_quant --snr_cut 0
+             run make_metallicity_sfr_maps.py --do_all_obj --Zdiag NB --plot_all_quant --snr_cut 0
 '''
 
 from header import *
@@ -1063,13 +1065,6 @@ if __name__ == "__main__":
             axes[2].set_aspect('auto')
             save_fig(fig, args.fig_dir, f'{args.id}_metallicity_{args.Zdiag}_SFR_corr{tie_vdisp_text}{snr_cut_text}{dered_text}.png', args) 
 
-            # -------appending line fit to output dataframe-----------
-            if args.do_all_obj:
-                obj = obj.to_dict()
-                obj.update({'logZ_logSFR_slope': linefit[0].n, 'logZ_logSFR_slope_u': linefit[0].s, 'logZ_logSFR_cen': linefit[1].n, 'logZ_logSFR_cen_u': linefit[1].s})
-                obj.update(vdisp_stats)
-                output_rows_list.append(obj)
-
         # --------plot RGB and metallicity and SFR and dispersion maps and correlation-------------
         elif args.plot_all_quant:
             fig, axes = plt.subplots(1, 4, figsize=(14, 4.5))
@@ -1138,7 +1133,7 @@ if __name__ == "__main__":
             pass
         '''
     # ------------writing out resulting dataframe-----------------
-    if args.do_all_obj and (args.plot_met_sfr or args.plot_all_quant):
+    if args.do_all_obj and args.plot_all_quant:
         df_out = pd.DataFrame(output_rows_list)
 
         # --------computing tmix---------

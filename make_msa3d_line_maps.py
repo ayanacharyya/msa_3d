@@ -708,14 +708,18 @@ def compute_rgb(fit_results, args, rlines='SII-6717,SII-6730', glines='H-alpha',
     '''
     available_lines = list(fit_results.keys())
     # ------------get RGB lines-----------------------
+    norm_factor = 1e-20 # ergs/s/cm^2
     image_arr = []
     for lines in [rlines, glines, blines]:
         images = []
         for line in lines.split(','):
             if line not in available_lines: return line
-            line_map, _  = get_emission_line_map(line, fit_results, args, log_flux_min=-21, log_flux_max=-18, dered=False)
+            line_map, _  = get_emission_line_map(line, fit_results, args, dered=False)
             images.append(unp.nominal_values(line_map.data))
-        img = np.sum(np.array(images), axis=0)
+        img = np.sum(np.array(images), axis=0) / norm_factor
+        
+        bkg = np.nanmedian(img)
+        img = img - bkg
         image_arr.append(img)
 
     # -------create RGB image---------
@@ -724,7 +728,8 @@ def compute_rgb(fit_results, args, rlines='SII-6717,SII-6730', glines='H-alpha',
         val = np.nanpercentile(img, pctl)
         if val > maximum: maximum = val
 
-    rgb_image = make_rgb(image_arr[0], image_arr[1], image_arr[2], interval=ManualInterval(vmin=0, vmax=maximum), stretch=SqrtStretch())
+    #rgb_image = make_rgb(image_arr[0], image_arr[1], image_arr[2], interval=ManualInterval(vmin=0, vmax=maximum), stretch=SqrtStretch())
+    rgb_image = make_lupton_rgb(image_arr[0], image_arr[1], image_arr[2], Q=500, stretch=0.1)
 
     return rgb_image
 
