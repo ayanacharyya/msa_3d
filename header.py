@@ -77,7 +77,7 @@ from matplotlib import pyplot as plt
 
 HOME = Path.home()
 
-rest_wave_dict = {#'OIII-4363': 4363.209,
+rest_wave_dict = {'OIII-4363': 4363.209,
                   'H-beta': 4861.3,
                   'OIII-4959': 4958.911,
                   'OIII-5007': 5008.239,
