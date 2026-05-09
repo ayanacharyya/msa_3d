@@ -1068,7 +1068,7 @@ if __name__ == "__main__":
 
             # --------plot RGB and metallicity and SFR and dispersion maps and correlation-------------
             elif args.plot_all_quant:
-                fig, axes = plt.subplots(1, 4, figsize=(14, 4.5))
+                fig, axes = plt.subplots(1, 5, figsize=(14, 4.5))
                 fig.subplots_adjust(left=0.06, right=0.98, bottom=0.12, top=0.98, wspace=0.5)
                 
                 # -----------gettign RGB image------------------
@@ -1117,7 +1117,7 @@ if __name__ == "__main__":
                 vdisp_stats = {'vdisp_mean':weighted_mean, 'vdisp_mean_u':mean_err, 'vdisp_16':percentiles[0], 'vdisp_50':percentiles[1], 'vdisp_84':percentiles[2]}
 
                 # ------plotting logOH vs SFR----------------
-                axes[-1], linefit = plot_met_sfr_corr(axes[-1], quant_maps, args, color='salmon', log_sfr_min=log_sfr_min, log_sfr_max=log_sfr_max, logOH_min=logOH_min, logOH_max=logOH_max)
+                axes[4], linefit = plot_met_sfr_corr(axes[4], quant_maps, args, color='salmon', log_sfr_min=log_sfr_min, log_sfr_max=log_sfr_max, logOH_min=logOH_min, logOH_max=logOH_max)
                 save_fig(fig, args.fig_dir, f'{args.id}_all_quant_Zdiag_{args.Zdiag}{tie_vdisp_text}{snr_cut_text}{dered_text}.png', args) 
 
                 # -------appending line fit to output dataframe-----------
@@ -1135,7 +1135,7 @@ if __name__ == "__main__":
             pass
     
     print(f'Overall {len(failed_objects)} objects ({failed_objects}) failed in the above loop..')
-    
+
     # ------------writing out resulting dataframe-----------------
     if args.do_all_obj and args.plot_all_quant:
         df_out = pd.DataFrame(output_rows_list)
