@@ -23,12 +23,12 @@ def make_plot(xcol, ycol, df, ax, args, colorcol=None, cmap='plasma', color='cor
     unit_dict = {'redshift':'', 'log_mass':r'M$_{\odot}$', 'log_sfr':r'M$_{\odot}$/yr', 'Zgrad_kpc':'dex/kpc', 'Zgrad_re':r'dex/r$_e$', 'logZ_logSFR_slope':'', 'vdisp_mean':'km/s', 'vdisp_50':'km/s', 't_mix':'yr', 'sigma0':'km/s'}
 
     if args.Zdiag == 'NB':
-        vmin_dict = {'redshift':0.9, 'log_mass':8.0, 'log_sfr':-4.0, 'Zgrad_kpc':-2, 'Zgrad_re':-2, 'logZ_logSFR_slope':-60, 'vdisp_mean':50, 'vdisp_50':50, 't_mix':0, 'sigma0':None}
-        vmax_dict = {'redshift':1.9, 'log_mass':11.0, 'log_sfr':1.0, 'Zgrad_kpc':2, 'Zgrad_re':2, 'logZ_logSFR_slope':20, 'vdisp_mean':150, 'vdisp_50':150, 't_mix':350, 'sigma0':None}
+        vmin_dict = {'redshift':0.9, 'log_mass':8.0, 'log_sfr':-4.0, 'Zgrad_kpc':-2, 'Zgrad_re':-2, 'logZ_logSFR_slope':-60, 'vdisp_mean':50, 'vdisp_50':50, 't_mix':-100, 'sigma0':None}
+        vmax_dict = {'redshift':1.9, 'log_mass':11.0, 'log_sfr':1.0, 'Zgrad_kpc':2, 'Zgrad_re':2, 'logZ_logSFR_slope':20, 'vdisp_mean':150, 'vdisp_50':150, 't_mix':300, 'sigma0':None}
         
     elif args.Zdiag == 'R3':
-        vmin_dict = {'redshift':0.9, 'log_mass':8.0, 'log_sfr':-4.0, 'Zgrad_kpc':-2, 'Zgrad_re':-2, 'logZ_logSFR_slope':-0.5, 'vdisp_mean':50, 'vdisp_50':50, 't_mix':-250, 'sigma0':None}
-        vmax_dict = {'redshift':1.9, 'log_mass':11.0, 'log_sfr':1.0, 'Zgrad_kpc':2, 'Zgrad_re':2, 'logZ_logSFR_slope':0.7, 'vdisp_mean':150, 'vdisp_50':150, 't_mix':250, 'sigma0':None}
+        vmin_dict = {'redshift':0.9, 'log_mass':8.0, 'log_sfr':-4.0, 'Zgrad_kpc':-2, 'Zgrad_re':-2, 'logZ_logSFR_slope':-0.5, 'vdisp_mean':50, 'vdisp_50':50, 't_mix':-100, 'sigma0':None}
+        vmax_dict = {'redshift':1.9, 'log_mass':11.0, 'log_sfr':1.0, 'Zgrad_kpc':2, 'Zgrad_re':2, 'logZ_logSFR_slope':0.7, 'vdisp_mean':150, 'vdisp_50':150, 't_mix':300, 'sigma0':None}
 
     # vmin_dict = {'redshift':0.9, 'log_mass':8.0, 'log_sfr':-4.0, 'Zgrad_kpc':-2, 'Zgrad_re':-2, 'logZ_logSFR_slope':-0.3, 'vdisp_mean':None, 'vdisp_50':None, 't_mix':-70}
     # vmax_dict = {'redshift':1.9, 'log_mass':11.0, 'log_sfr':1.0, 'Zgrad_kpc':2, 'Zgrad_re':2, 'logZ_logSFR_slope':0.4, 'vdisp_mean':None, 'vdisp_50':None, 't_mix':100}

@@ -6,6 +6,7 @@
     Example: run compare_metallicity_maps.py --do_all_obj --Zdiag NB --snr_cut 3
              run compare_metallicity_maps.py --id 8512 --Zdiag NB --snr_cut 0 --plot_snr
              run compare_metallicity_maps.py --id 8512 --Zdiag R3 --snr_cut 3
+             run compare_metallicity_maps.py --do_all_obj --Zdiag N2 --use_P04 --snr_cut 0
 '''
 
 from header import *
@@ -48,6 +49,7 @@ if __name__ == "__main__":
     tie_vdisp_text = '_tie_vdisp' if args.tie_vdisp else ''
     snr_cut_text = f'_snr{args.snr_cut}' if args.snr_cut is not None else ''
     dered_text = f'_nodered' if args.nodered else ''
+    P04_text = '_P04' if args.use_P04 else ''
     
     # ----------------reading in catalog---------------------
     df = read_msa3d_catalog(catalog_file)
@@ -68,7 +70,7 @@ if __name__ == "__main__":
         args.upto_pix = args.upto_arcsec / msa_pix_size_arcsec
 
         # ------determining directories and filenames---------
-        quants_fits_file = quants_fits_dir / f'{args.id:05d}_Zdiag_{args.Zdiag}{tie_vdisp_text}{snr_cut_text}{dered_text}.quants.fits'
+        quants_fits_file = quants_fits_dir / f'{args.id:05d}_Zdiag_{args.Zdiag}{tie_vdisp_text}{snr_cut_text}{dered_text}{P04_text}.quants.fits'
         mengting_fits_file = mengting_fits_dir / f'cube_jan-22-24_{args.id}_metal.fits'
 
         # -----------read metallicity map--------------

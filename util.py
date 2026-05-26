@@ -87,6 +87,7 @@ def parse_args():
     parser.add_argument('--Zdiag', metavar='Zdiag', type=str, action='store', default='KD02_R23', help='Which metallicity diagnostic to use (choose between KD02_R23,R23,R3,O3S2,O3O2,S2,R2,RS32,Te,P25,NB? Default is KD02_R23')
     parser.add_argument('--Zbranch', metavar='Zbranch', type=str, action='store', default='low', help='Which R23 branch to be used (choose between high/low)? Default is low')
     parser.add_argument('--use_C25', dest='use_C25', action='store_true', default=False, help='Use the Cataldi+2025 calibrations rather than Curti+2020? Default is no.')
+    parser.add_argument('--use_P04', dest='use_P04', action='store_true', default=False, help='Use the Pettini & Pagel 2004 calibrations rather than Curti+2020? Default is no.')
     parser.add_argument('--debug_Zdiag', dest='debug_Zdiag', action='store_true', default=False, help='Make additional plots to debug the metallicity diagnostic implementation? Default is no.')
     parser.add_argument('--ignore_combined_method', dest='ignore_combined_method', action='store_true', default=False, help='Ignore the combined method (S6 of KD02) while computing R23 metallicity and rely solely on R23? Default is no.')
     parser.add_argument('--exclude_lines', metavar='exclude_lines', type=str, action='store', default='', help='Which lines to be excluded for metallicity measurement with NB? Default is empty string, i.e., use all available lines')

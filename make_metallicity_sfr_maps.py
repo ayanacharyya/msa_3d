@@ -427,8 +427,33 @@ def get_Z_C19(fit_results, args):
         print(f'\nSaved figure at {figname}')
 
     return logOH_map, logOH_int
-# --------------------------------------------------------------------------------------------------------------------
 
+def get_Z_P04(fit_results, args):
+    '''
+    Computes and returns the spatially resolved as well as intregrated metallicity based on a given Pettini & Pagel 2004 calibrations, from a given dictionary of emission lines
+    '''
+    # ------getting appropriate emission lines and calibration coefficients--------------
+    if args.Zdiag == 'N2':
+        line_map_arr, line_int_arr = get_emission_line_maps(fit_results, ['NII-6584', 'H-alpha'], args)
+        if line_map_arr is None: return None, ufloat(np.nan, np.nan)
+        
+        ratio_map = take_safe_log_ratio(line_map_arr[0], line_map_arr[1])
+        try: ratio_int = unp.log10(line_int_arr[0] / line_int_arr[1])
+        except ValueError: ratio_int = ufloat(np.nan, np.nan)
+        coeff = [0.57, 8.9] # from Eq 1 of Pettini & Pagel 2004
+    
+    if np.ma.isMaskedArray(ratio_map):
+        mask = ratio_map.mask
+        ratio_map = np.where(ratio_map.mask, np.nan, ratio_map.data)
+    else:
+        mask = False
+
+    # -------estimating the metallicities---------------
+    logOH_map = np.ma.masked_where(mask, np.poly1d(coeff)(ratio_map))
+    logOH_int = np.poly1d(coeff)(ratio_int)
+
+    return logOH_map, logOH_int
+# --------------------------------------------------------------------------------------------------------------------
 
 # --------------------------------------------------------------------------------------------------------------------
 def compute_Z_NB(line_label_array, line_waves_array, line_flux_array, args):
@@ -619,6 +644,8 @@ def get_metallicity_map(fit_results, args):
         logOH_map, logOH_int = get_Z_NB(fit_results, args)
     elif args.Zdiag == 'P25' and set(['OIII-5007', 'H-alpha', 'SII-6717', 'SII-6730']) <= set(args.available_lines):
         logOH_map, logOH_int = get_Z_P25(fit_results, args)
+    elif args.Zdiag == 'N2' and args.use_P04:
+        logOH_map, logOH_int = get_Z_P04(fit_results, args)
     else:
         logOH_map, logOH_int = get_Z_C19(fit_results, args)
 
@@ -942,6 +969,7 @@ if __name__ == "__main__":
     tie_vdisp_text = '_tie_vdisp' if args.tie_vdisp else ''
     snr_cut_text = f'_snr{args.snr_cut}' if args.snr_cut is not None else ''
     dered_text = f'_nodered' if args.nodered else ''
+    P04_text = '_P04' if args.use_P04 else ''
     Z_SFR_slope_file = args.output_dir / 'catalogs' / f'Z_{args.Zdiag}_SFR_slopes{tie_vdisp_text}{snr_cut_text}{dered_text}.csv'
 
     # ----------------reading in catalog---------------------
@@ -965,7 +993,7 @@ if __name__ == "__main__":
         # ------determining directories and filenames---------
         args.cube_fits_file = cube_fits_dir / f'cube_square_medians_{args.id:d}_hdr_rect_err.fits'
         args.maps_fits_file = maps_fits_dir / f'{args.id:05d}{tie_vdisp_text}.maps.fits'
-        args.quants_fits_file = quants_fits_dir / f'{args.id:05d}_Zdiag_{args.Zdiag}{tie_vdisp_text}{snr_cut_text}{dered_text}.quants.fits'
+        args.quants_fits_file = quants_fits_dir / f'{args.id:05d}_Zdiag_{args.Zdiag}{tie_vdisp_text}{snr_cut_text}{dered_text}{P04_text}.quants.fits'
 
         try:
             # -----------checking if gaps in cube coincide with important lines--------------
