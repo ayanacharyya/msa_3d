@@ -22,6 +22,8 @@ import itertools
 import io
 import requests
 import gzip
+import pickle
+import gc
 
 from datetime import datetime, timedelta
 from pathlib import Path
