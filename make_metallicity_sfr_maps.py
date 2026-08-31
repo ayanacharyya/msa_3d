@@ -12,6 +12,7 @@
              run make_metallicity_sfr_maps.py --id 8512 --Zdiag R3 --Zbranch low --use_C25 --plot_met_sfr --snr_cut 3
              run make_metallicity_sfr_maps.py --do_all_obj --Zdiag R3 --Zbranch low --use_C25 --plot_all_quant --snr_cut 0
              run make_metallicity_sfr_maps.py --do_all_obj --Zdiag NB --plot_all_quant --snr_cut 0
+             run make_metallicity_sfr_maps.py --do_all_obj --Zdiag NB --plot_met_sfr --snr_cut 3 --tie_vdisp --tie_doublets
 '''
 
 from header import *
@@ -967,10 +968,11 @@ if __name__ == "__main__":
 
     catalog_file = args.input_dir / 'redshifts.dat'
     tie_vdisp_text = '_tie_vdisp' if args.tie_vdisp else ''
+    tie_doublet_text = '_tie_doublet' if args.tie_doublets else ''
     snr_cut_text = f'_snr{args.snr_cut}' if args.snr_cut is not None else ''
     dered_text = f'_nodered' if args.nodered else ''
     P04_text = '_P04' if args.use_P04 else ''
-    Z_SFR_slope_file = args.output_dir / 'catalogs' / f'Z_{args.Zdiag}_SFR_slopes{tie_vdisp_text}{snr_cut_text}{dered_text}.csv'
+    Z_SFR_slope_file = args.output_dir / 'catalogs' / f'Z_{args.Zdiag}_SFR_slopes{tie_vdisp_text}{tie_doublet_text}{snr_cut_text}{dered_text}.csv'
 
     # ----------------reading in catalog---------------------
     df_imp_lines = get_important_lines(args)
@@ -992,8 +994,8 @@ if __name__ == "__main__":
 
         # ------determining directories and filenames---------
         args.cube_fits_file = cube_fits_dir / f'cube_square_medians_{args.id:d}_hdr_rect_err.fits'
-        args.maps_fits_file = maps_fits_dir / f'{args.id:05d}{tie_vdisp_text}.maps.fits'
-        args.quants_fits_file = quants_fits_dir / f'{args.id:05d}_Zdiag_{args.Zdiag}{tie_vdisp_text}{snr_cut_text}{dered_text}{P04_text}.quants.fits'
+        args.maps_fits_file = maps_fits_dir / f'{args.id:05d}{tie_vdisp_text}{tie_doublet_text}.maps.fits'
+        args.quants_fits_file = quants_fits_dir / f'{args.id:05d}_Zdiag_{args.Zdiag}{tie_vdisp_text}{tie_doublet_text}{snr_cut_text}{dered_text}{P04_text}.quants.fits'
 
         try:
             # -----------checking if gaps in cube coincide with important lines--------------
@@ -1038,7 +1040,7 @@ if __name__ == "__main__":
                 axes[-1] = plot_2D_map(unp.nominal_values(args.EB_V_map), axes[-1], f'E(B-V)', args, cmap='plasma', takelog=False, vmin=None, vmax=None, hide_xaxis=False, hide_yaxis=True, hide_cbar=False)
                 
                 fig.text(0.1, 0.98, f'ID {args.id}', fontsize=args.fontsize, c='k', ha='left', va='top')
-                save_fig(fig, args.fig_dir, f'{args.id}_EB_V_maps{tie_vdisp_text}{snr_cut_text}{dered_text}.png', args)    
+                save_fig(fig, args.fig_dir, f'{args.id}_EB_V_maps{tie_vdisp_text}{tie_doublet_text}{snr_cut_text}{dered_text}.png', args)    
 
             # --------plot SFR and line maps-------------
             if args.plot_sfr:
@@ -1055,7 +1057,7 @@ if __name__ == "__main__":
                 axes[-1] = plot_quant_map(axes[-1], 'sfr', quant_maps, args, cmap='Blues', takelog=True, vmin=log_sfr_min, vmax=log_sfr_max, hide_xaxis=False, hide_yaxis=True, hide_cbar=False)
                 
                 fig.text(0.1, 0.98, f'ID {args.id}', fontsize=args.fontsize, c='k', ha='left', va='top')
-                save_fig(fig, args.fig_dir, f'{args.id}_SFR_maps{tie_vdisp_text}{snr_cut_text}{dered_text}.png', args)    
+                save_fig(fig, args.fig_dir, f'{args.id}_SFR_maps{tie_vdisp_text}{tie_doublet_text}{snr_cut_text}{dered_text}.png', args)    
 
             # --------plot metallicity and line maps-------------
             if args.plot_metallicity:
@@ -1078,7 +1080,7 @@ if __name__ == "__main__":
                 axes[-1] = plot_quant_map(axes[-1], 'logOH', quant_maps, args, cmap='viridis', takelog=False, vmin=logOH_min, vmax=logOH_max, hide_xaxis=False, hide_yaxis=True, hide_cbar=False)
                 
                 fig.text(0.1, 0.98, f'ID {args.id}', fontsize=args.fontsize, c='k', ha='left', va='top')
-                save_fig(fig, args.fig_dir, f'{args.id}_metallicity_{args.Zdiag}_maps{tie_vdisp_text}{snr_cut_text}{dered_text}.png', args)    
+                save_fig(fig, args.fig_dir, f'{args.id}_metallicity_{args.Zdiag}_maps{tie_vdisp_text}{tie_doublet_text}{snr_cut_text}{dered_text}.png', args)    
 
             # -------plot metallicity and SFR maps and their correlation------------
             if args.plot_met_sfr:
@@ -1092,7 +1094,7 @@ if __name__ == "__main__":
                 # ------plotting logOH vs SFR----------------
                 axes[2], linefit = plot_met_sfr_corr(axes[2], quant_maps, args, color='salmon', log_sfr_min=log_sfr_min, log_sfr_max=log_sfr_max, logOH_min=logOH_min, logOH_max=logOH_max)
                 axes[2].set_aspect('auto')
-                save_fig(fig, args.fig_dir, f'{args.id}_metallicity_{args.Zdiag}_SFR_corr{tie_vdisp_text}{snr_cut_text}{dered_text}.png', args) 
+                save_fig(fig, args.fig_dir, f'{args.id}_metallicity_{args.Zdiag}_SFR_corr{tie_vdisp_text}{tie_doublet_text}{snr_cut_text}{dered_text}.png', args) 
 
             # --------plot RGB and metallicity and SFR and dispersion maps and correlation-------------
             elif args.plot_all_quant:
@@ -1146,7 +1148,7 @@ if __name__ == "__main__":
 
                 # ------plotting logOH vs SFR----------------
                 axes[4], linefit = plot_met_sfr_corr(axes[4], quant_maps, args, color='salmon', log_sfr_min=log_sfr_min, log_sfr_max=log_sfr_max, logOH_min=logOH_min, logOH_max=logOH_max)
-                save_fig(fig, args.fig_dir, f'{args.id}_all_quant_Zdiag_{args.Zdiag}{tie_vdisp_text}{snr_cut_text}{dered_text}.png', args) 
+                save_fig(fig, args.fig_dir, f'{args.id}_all_quant_Zdiag_{args.Zdiag}{tie_vdisp_text}{tie_doublet_text}{snr_cut_text}{dered_text}.png', args) 
 
                 # -------appending line fit to output dataframe-----------
                 if args.do_all_obj:

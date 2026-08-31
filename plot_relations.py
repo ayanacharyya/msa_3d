@@ -5,6 +5,7 @@
     Created: 30-03-26
     Example: run plot_relations.py --Zdiag NB --snr_cut 3 --fit_correlation
              run plot_relations.py --Zdiag R3 --snr_cut 3 --fit_correlation
+             run plot_relations.py --Zdiag NB --snr_cut 3 --tie_vdisp --tie_doublets --fit_correlation
 '''
 
 from header import *
@@ -62,8 +63,9 @@ if __name__ == "__main__":
     # -------------setup directories and global variables----------------
     args.fig_dir = args.output_dir / 'plots'
     tie_vdisp_text = '_tie_vdisp' if args.tie_vdisp else ''
+    tie_doublet_text = '_tie_doublet' if args.tie_doublets else ''
     snr_cut_text = f'_snr{args.snr_cut}' if args.snr_cut is not None else ''
-    Z_SFR_slope_file = args.output_dir / 'catalogs' / f'Z_{args.Zdiag}_SFR_slopes{tie_vdisp_text}{snr_cut_text}.csv'
+    Z_SFR_slope_file = args.output_dir / 'catalogs' / f'Z_{args.Zdiag}_SFR_slopes{tie_vdisp_text}{tie_doublet_text}{snr_cut_text}.csv'
     Juan_vdisp_file = args.input_dir / 'v_over_sigma.csv'
 
     # -----------read dataframe-------------------
@@ -93,7 +95,7 @@ if __name__ == "__main__":
     axes[3] = make_plot('sigma0', 't_mix', df, axes[3], args, colorcol='log_mass', do_fit=args.fit_correlation)
 
     # ----------save figure---------------
-    figname = f'all_relations_Z_{args.Zdiag}{tie_vdisp_text}{snr_cut_text}.png'
+    figname = f'all_relations_Z_{args.Zdiag}{tie_vdisp_text}{tie_doublet_text}{snr_cut_text}.png'
     save_fig(fig, args.fig_dir, figname, args)
 
     print(f'Completed in {timedelta(seconds=(datetime.now() - start_time).seconds)}')

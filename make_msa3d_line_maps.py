@@ -10,6 +10,7 @@
              run make_msa3d_line_maps.py --id 2145 --debug_linefit 15,12
              run make_msa3d_line_maps.py --do_all_obj --save_linefit_plot --plot_line_flux_maps --plot_line_quant_maps --ncores 6
              run make_msa3d_line_maps.py --do_all_obj --make_speccat --snr_cut 3
+             run make_msa3d_line_maps.py --do_all_obj --make_speccat --snr_cut 3 --tie_vdisp --tie_doublets
 '''
 
 from header import *
@@ -257,27 +258,49 @@ def gaussian(x, amp, mean, sigma):
     return amp * np.exp(-(x - mean)**2 / (2 * sigma**2))
 
 # --------------------------------------------------------------------------------------------------------------------
-def global_gaussian_model(x, *popt, rest_waves=None, tie_vdisp=False):
+def global_gaussian_model(x, *popt, rest_waves=None, g_labels=None, tie_vdisp=False, tie_doublets=False):
     '''
-    Computes n-component Gaussian model for n emission lines
-    Returns np.array
+    Computes n-component Gaussian model for n emission lines.
+    Supports tied velocity dispersion and tied doublet ratios.
     '''
-    model = np.zeros_like(x)
+    model = np.zeros_like(x, dtype=float)
+    
+    p_idx = 2 if tie_vdisp else 1
+    shared_sigma = popt[1] if tie_vdisp else None
+    
+    fitted_amps = {}
+    fitted_sigs = {}
 
-    if tie_vdisp: # Structure: [v_los, shared_sigma, amp1, amp2, ... ampN]
-        shared_sigma = popt[1]
-        for i, rest_wave in enumerate(rest_waves):
-            amp = popt[i + 2]
-            mu = rest_wave * (1 + popt[0] / c_km_s)
-            sigma_wave = (shared_sigma * mu) / c_km_s
-            model +=  gaussian(x, amp, mu, sigma_wave)
-    else: # Structure: [v_los, amp1, sig1, amp2, sig2, ... ampN, sigN]
-        for i, rest_wave in enumerate(rest_waves):
-            amp = popt[2*i + 1]
-            sig_kms = popt[2*i + 2]
-            mu = rest_wave * (1 + popt[0] / c_km_s)
-            sigma_wave = (sig_kms * mu) / c_km_s
-            model += gaussian(x, amp, mu, sigma_wave)
+    for i, rest_wave in enumerate(rest_waves):
+        label = g_labels[i] if g_labels is not None else None
+
+        # --- 1. Line Amplitude ---
+        if tie_doublets and label in DOUBLET_RATIOS:
+            primary_label, ratio = DOUBLET_RATIOS[label]
+            amp = fitted_amps[primary_label] * ratio
+        else:
+            amp = popt[p_idx]
+            p_idx += 1
+            if label: 
+                fitted_amps[label] = amp
+                
+        # --- 2. Line Sigma ---
+        if tie_vdisp:
+            sig_kms = shared_sigma
+        else:
+            if tie_doublets and label in DOUBLET_RATIOS:
+                primary_label, _ = DOUBLET_RATIOS[label]
+                sig_kms = fitted_sigs[primary_label]
+            else:
+                sig_kms = popt[p_idx]
+                p_idx += 1
+                if label: 
+                    fitted_sigs[label] = sig_kms
+
+        # --- 3. Add Gaussian ---
+        mu = rest_wave * (1 + popt[0] / c_km_s)
+        sigma_wave = (sig_kms * mu) / c_km_s
+        model += gaussian(x, amp, mu, sigma_wave)
             
     return model
 
@@ -285,10 +308,8 @@ def global_gaussian_model(x, *popt, rest_waves=None, tie_vdisp=False):
 def linefit_spectrum(df_spec, df_lines, line_groups, args, i='X', j='X', flam_col='flam', flam_u_col='flam_u', wave_col='rest_wave', label_col='labels', cont_col='cont', flux_factor=1.):
     '''
     Runs emission line fitting on one spectrum (spaxel) of the emission line wavelengths provided (df_lines)
-    Accounts for the corresponding error spectrum, if provided
-    Returns N emission line fluxes, including corresponding uncertainties
+    Accounts for optional velocity dispersion tying (args.tie_vdisp) and doublet ratio tying (args.tie_doublets).
     '''
-    # ---------initialising fit result dict-----------------
     fit_results_spaxel = {}
     params = ['flux', 'flux_err', 'flux_snr', 'vel', 'vel_err', 'sigma', 'sigma_err']
     for label in df_lines[label_col]:
@@ -303,7 +324,7 @@ def linefit_spectrum(df_spec, df_lines, line_groups, args, i='X', j='X', flam_co
     y_filled = np.interp(df_spec[wave_col], df_spec_masked[wave_col], df_spec_masked[flam_col])
     df_spec[cont_col] = uniform_filter1d(y_filled, size=50, mode='nearest')
     contsub_col = 'flam_contsub'
-    df_spec[contsub_col] = df_spec[flam_col] - df_spec[cont_col] # Subtract continuum
+    df_spec[contsub_col] = df_spec[flam_col] - df_spec[cont_col]
 
     # --------------plotting the spectrum------------------------
     if args.save_linefit_plot or args.debug_linefit is not None:
@@ -313,97 +334,140 @@ def linefit_spectrum(df_spec, df_lines, line_groups, args, i='X', j='X', flam_co
         ax = plot_linelist(ax, df_lines, fontsize=args.fontsize / args.fontfactor, color='cornflowerblue')
         for line_wave in df_lines[wave_col]: ax.axvspan(line_wave - args.mask_window, line_wave + args.mask_window, color='gray', alpha=0.2)
 
-     # -----------fitting different chunks of lines together---------------
+    # -----------fitting different chunks of lines together---------------
     for index2, group in enumerate(line_groups):
         g_waves = [l[wave_col] for l in group]
         g_labels = [l[label_col] for l in group]
         
-        # -------define local window for the group---------
         min_w, max_w = min(g_waves) - args.fit_padding, max(g_waves) + args.fit_padding
         df_chunk = df_spec[df_spec[wave_col].between(min_w, max_w)]
         if len(df_chunk) < 5: continue
 
-        # -----------initialising the parameters-----------------------
-        sig_kmps_guess = 200. # km/s
-        vel_guess = 100. # km/s
-        vel_bound = 500 # +/- km/s, used for both vel and v_sigma
+        sig_kmps_guess = 200.
+        vel_guess = 100.
+        vel_bound = 500
 
-        # -----------setting up initial guesses and bounds for parameters common to the whole group----------
-        if args.tie_vdisp: # Structure: [v_los, shared_sigma, amp1, amp2, ... ampN]
+        # Base parameter vector setup
+        if args.tie_vdisp:
             p0 = [vel_guess, sig_kmps_guess]
             lbounds = [-vel_bound, 0.]
             ubounds = [vel_bound, vel_bound]
-        else: # Structure: [v_los, amp1, sig1, amp2, sig2, ... ampN, sigN]
+        else:
             p0 = [vel_guess]
             lbounds = [-vel_bound]
             ubounds = [vel_bound]
 
-        # -----------setting up initial guesses and bounds for parameters for each line----------
-        for this_line_wave in g_waves:
+        # Add parameters per line (skipping secondary lines if doublets are tied)
+        for this_line_wave, this_label in zip(g_waves, g_labels):
+            if args.tie_doublets and this_label in DOUBLET_RATIOS:
+                continue  # Skip adding independent fit parameters for tied secondary lines
+
             this_df_chunk = df_chunk[df_chunk[wave_col].between(this_line_wave - args.mask_window, this_line_wave + args.mask_window)]
             if len(this_df_chunk) > 0:
                 this_amp_guess = this_df_chunk[contsub_col].max()
-                this_amp_bound = this_amp_guess + args.amp_factor * this_df_chunk[this_df_chunk[contsub_col] == this_amp_guess][flam_u_col].values[0] # max limit = max. amplitude + factor * error in max. amplitude
+                max_err = this_df_chunk[this_df_chunk[contsub_col] == this_amp_guess][flam_u_col].values[0]
+                this_amp_bound = this_amp_guess + args.amp_factor * max_err
                 this_amp_guess = max(this_amp_guess, 0)
             else:
-                this_amp_guess, this_amp_bound = 0., 0.001 # forced to be nearly zero because data does not exist for this chunk
+                this_amp_guess, this_amp_bound = 0., 0.001
 
-            if args.tie_vdisp: # Structure: [v_los, shared_sigma, amp1, amp2, ... ampN]
+            if args.tie_vdisp:
                 p0 = np.hstack([p0, [this_amp_guess]])
                 lbounds = np.hstack([lbounds, [0]])
                 ubounds = np.hstack([ubounds, [this_amp_bound]])
-            else: # Structure: [v_los, amp1, sig1, amp2, sig2, ... ampN, sigN]
+            else:
                 p0 = np.hstack([p0, [this_amp_guess, sig_kmps_guess]])
                 lbounds = np.hstack([lbounds, [0, 0]])
                 ubounds = np.hstack([ubounds, [this_amp_bound, vel_bound]])
 
-        # ----------defining model for this specific group----------------
+        # Define custom model wrapper
         def group_model(t_x, *params):
-            return global_gaussian_model(t_x, *params, rest_waves=g_waves, tie_vdisp=args.tie_vdisp)
+            return global_gaussian_model(
+                t_x, *params, 
+                rest_waves=g_waves, 
+                tie_vdisp=args.tie_vdisp, 
+                tie_doublets=args.tie_doublets, 
+                g_labels=g_labels
+            )
 
-        try:
-            popt, pcov, infodict, _, _ = curve_fit(group_model, df_chunk[wave_col], df_chunk[contsub_col], 
-                                                   p0=p0, sigma=df_chunk[flam_u_col], bounds=(lbounds, ubounds), 
-                                                   maxfev=10000, full_output=True, absolute_sigma=True, method='dogbox')
-            perr = np.sqrt(np.diag(pcov))
-            #print(f'Deb326: popt={popt},\nperr={perr}') ##
+        #try:
+        popt, pcov, infodict, _, _ = curve_fit(
+            group_model, df_chunk[wave_col], df_chunk[contsub_col], 
+            p0=p0, sigma=df_chunk[flam_u_col], bounds=(lbounds, ubounds), 
+            maxfev=10000, full_output=True, absolute_sigma=True, method='dogbox'
+        )
+        perr = np.sqrt(np.diag(pcov))
+        
+        v_fit, v_err = popt[0], perr[0]
+
+        # Reconstruct parameter index mappings for results
+        fitted_amps, fitted_amp_errs = {}, {}
+        fitted_sigs, fitted_sig_errs = {}, {}
+        
+        param_idx = 2 if args.tie_vdisp else 1
+        if args.tie_vdisp:
+            shared_sig, shared_sig_err = popt[1], perr[1]
+
+        for label in g_labels:
+            if args.tie_doublets and label in DOUBLET_RATIOS:
+                continue
+            fitted_amps[label], fitted_amp_errs[label] = popt[param_idx], perr[param_idx]
+            param_idx += 1
+            if not args.tie_vdisp:
+                fitted_sigs[label], fitted_sig_errs[label] = popt[param_idx], perr[param_idx]
+                param_idx += 1
+
+        # Populate fit_results_spaxel dictionary
+        for ind, label in enumerate(g_labels):
+            if args.tie_doublets and label in DOUBLET_RATIOS:
+                primary_label, ratio_factor = DOUBLET_RATIOS[label]
+                amp_fit = fitted_amps[primary_label] * ratio_factor
+                amp_err = fitted_amp_errs[primary_label] * ratio_factor
+            else:
+                amp_fit = fitted_amps[label]
+                amp_err = fitted_amp_errs[label]
+
+            if args.tie_vdisp:
+                sig_fit, sig_err = shared_sig, shared_sig_err
+            else:
+                if args.tie_doublets and label in DOUBLET_RATIOS:
+                    primary_label, _ = DOUBLET_RATIOS[label]
+                    sig_fit, sig_err = fitted_sigs[primary_label], fitted_sig_errs[primary_label]
+                else:
+                    sig_fit, sig_err = fitted_sigs[label], fitted_sig_errs[label]
+
+            # Integrated Flux Calculation
+            mu_w = g_waves[ind] * (1 + ufloat(v_fit, v_err) / c_km_s)
+            sig_w = (ufloat(sig_fit, sig_err) * mu_w) / c_km_s
+            flux = ufloat(amp_fit, amp_err) * sig_w * np.sqrt(2 * np.pi) * flux_factor
             
-            # ------mapping parameters back to results------------
-            v_fit, v_err = popt[0], perr[0]
+            flux_err = compute_flux_err(
+                amp_fit, mu_w.n, sig_w.n, df_chunk, 
+                flam_col=flam_col, contsub_col=contsub_col, 
+                flam_u_col=flam_u_col, wave_col=wave_col, cont_col=cont_col, ax=None
+            ) * flux_factor
+            flux = ufloat(flux.n, flux_err)
 
-            for ind in range(len(g_labels)):
-                if args.tie_vdisp: # Structure: [v_los, shared_sigma, amp1, amp2, ... ampN]
-                    sig_fit, sig_err = popt[1], perr[1]
-                    amp_fit, amp_err = popt[ind + 2], perr[ind + 2]
-                else: # Structure: [v_los, amp1, sig1, amp2, sig2, ... ampN, sigN]
-                    amp_fit, amp_err = popt[2 * ind + 1], perr[2 * ind + 1]
-                    sig_fit, sig_err = popt[2 * ind + 2], perr[2 * ind + 2]
-                    
-                # ------Integrated Flux Calculation-0-----------
-                mu_w = g_waves[ind] * (1 + ufloat(v_fit, v_err) / c_km_s)
-                sig_w = (ufloat(sig_fit, sig_err) * mu_w) / c_km_s
-                flux = ufloat(amp_fit, amp_err) * sig_w * np.sqrt(2 * np.pi) * flux_factor # multiplying the constant factor for flux here so that output fluxes are in units of ergs/s/cm^2
-                flux_err = compute_flux_err(amp_fit, mu_w.n, sig_w.n, df_chunk, flam_col=flam_col, contsub_col=contsub_col, flam_u_col=flam_u_col, wave_col=wave_col, cont_col=cont_col, ax=None) * flux_factor # to compute error on flux
-                flux = ufloat(flux.n, flux_err)
+            fit_results_spaxel[label] = {
+                'flux': flux.n, 'flux_err': flux.s, 
+                'flux_snr': flux.n / flux.s if flux.s > 0 else np.nan,
+                'vel': v_fit, 'vel_err': v_err,
+                'sigma': sig_fit, 'sigma_err': sig_err
+            }
 
-                fit_results_spaxel[g_labels[ind]] = {
-                    'flux': flux.n, 'flux_err': flux.s, 'flux_snr': flux.n / flux.s if flux.s > 0 else np.nan,
-                    'vel': v_fit, 'vel_err': v_err,
-                    'sigma': sig_fit, 'sigma_err': sig_err
-                }
-            # ---------plotting the fit onto the observed spectrum-----------
-            if args.save_linefit_plot or args.debug_linefit is not None:
-                x_arr = np.linspace(min_w, max_w, 100)
-                model_flux = group_model(x_arr, *popt)
-                model_cont = np.interp(x_arr, df_chunk[wave_col], df_chunk[cont_col])
-                total_model = model_flux + model_cont # need to add the continuum back in just for plotting purposes
-                ax.plot(x_arr, total_model, color='k', lw=1.5, linestyle='--', label='Fitted model', zorder=5)
-                ax.plot(x_arr, group_model(x_arr, *p0) + model_cont, color='b', lw=1.5, linestyle='dotted', label='Initial model', zorder=5)
-                ax.text(0.01, 0.95 - index2 * 0.1, f'nfev = {infodict["nfev"]}', ha='left', va='top', color='k', transform=ax.transAxes)
-
+        # ---------plotting the fit onto the observed spectrum-----------
+        if args.save_linefit_plot or args.debug_linefit is not None:
+            x_arr = np.linspace(min_w, max_w, 100)
+            model_flux = group_model(x_arr, *popt)
+            model_cont = np.interp(x_arr, df_chunk[wave_col], df_chunk[cont_col])
+            total_model = model_flux + model_cont # need to add the continuum back in just for plotting purposes
+            ax.plot(x_arr, total_model, color='k', lw=1.5, linestyle='--', label='Fitted model', zorder=5)
+            ax.plot(x_arr, group_model(x_arr, *p0) + model_cont, color='b', lw=1.5, linestyle='dotted', label='Initial model', zorder=5)
+            ax.text(0.01, 0.95 - index2 * 0.1, f'nfev = {infodict["nfev"]}', ha='left', va='top', color='k', transform=ax.transAxes)
+        '''
         except Exception as e:
             print(f'Fit failed due to: {e}')
-
+        '''
     # --------------saving the spectrum plot------------------------
     if args.save_linefit_plot or args.debug_linefit is not None:
         figname = f'{args.id}_pixel_{i}-{j}_linefit.png'
@@ -654,7 +718,7 @@ def plot_line_flux_maps(fit_results, args):
         if args.plot_snr: axes_snr[row, col].remove()
 
      # ---------saving figures-------------------
-    figname = f'{args.id}_fluxmaps{tie_vdisp_text}{snr_cut_text}.png'
+    figname = f'{args.id}_fluxmaps{tie_vdisp_text}{tie_doublet_text}{snr_cut_text}.png'
     save_fig(fig, args.fig_dir, figname, args)    
     if args.plot_snr: save_fig(fig_snr, args.fig_dir, Path(str(figname).replace('flux', 'snr')), args)
 
@@ -694,7 +758,7 @@ def plot_line_quant_maps(fit_results, line, args):
     if args.plot_snr: fig_snr.text(0.15, 0.9, f'ID {args.id}: {line} SNR', fontsize=args.fontsize, c='k', ha='left', va='top')
 
     # ---------saving figures-------------------
-    figname = f'{args.id}_{line}_fitted_maps{tie_vdisp_text}{snr_cut_text}.png'
+    figname = f'{args.id}_{line}_fitted_maps{tie_vdisp_text}{tie_doublet_text}{snr_cut_text}.png'
     save_fig(fig, args.fig_dir, figname, args)    
     if args.plot_snr: save_fig(fig_snr, args.fig_dir, Path(str(figname).replace('maps', 'snr')), args)
 
@@ -753,7 +817,7 @@ def plot_rgb(rgb_image, args, given_ax=None):
 
     # ---------saving figures-------------------
     if given_ax is None:
-        figname = f'{args.id}_rgb{tie_vdisp_text}.png'
+        figname = f'{args.id}_rgb{tie_vdisp_text}{tie_doublet_text}.png'
         save_fig(fig, args.fig_dir, figname, args)    
 
     return ax
@@ -811,6 +875,14 @@ def read_line_maps_fits(filename, args):
     return fit_results, spatial_header
 
 # --------------------------------------------------------------------------------------------------------------------
+# Theoretical flux ratios (primary / secondary)
+DOUBLET_RATIOS = {
+    # 'secondary_label': ('primary_label', theoretical_ratio)
+    'OIII-5007': ('OIII-4959', 2.984),  # A(5007) = A(4959) * 2.984
+    'NII-6584':  ('NII-6548',  2.942),  # A(6584) = A(6548) * 2.942
+}
+
+# --------------------------------------------------------------------------------------------------------------------
 if __name__ == "__main__":
     args = parse_args()
     if not args.keep: plt.close('all')
@@ -824,6 +896,7 @@ if __name__ == "__main__":
 
     catalog_file = args.input_dir / 'redshifts.dat'
     tie_vdisp_text = '_tie_vdisp' if args.tie_vdisp else ''
+    tie_doublet_text = '_tie_doublet' if args.tie_doublets else ''
     snr_cut_text = f'_snr{args.snr_cut}' if args.snr_cut is not None else ''
 
     # ----------------reading in catalog---------------------
@@ -847,7 +920,7 @@ if __name__ == "__main__":
 
         # ------determining directories and filenames---------
         args.cube_fits_file = cube_fits_dir / f'cube_square_medians_{args.id:d}_hdr_rect_err.fits'
-        args.maps_fits_file = maps_fits_dir / f'{args.id:05d}{tie_vdisp_text}.maps.fits'
+        args.maps_fits_file = maps_fits_dir / f'{args.id:05d}{tie_vdisp_text}{tie_doublet_text}.maps.fits'
 
         args.linefit_fig_dir = args.fig_dir / f'{args.id}_linefit_plots'
         args.linefit_fig_dir.mkdir(exist_ok=True, parents=True)
@@ -907,6 +980,6 @@ if __name__ == "__main__":
    
     # -----------write sepccat to file----------
     if args.make_speccat and args.do_all_obj:
-        df_spec.to_csv(args.output_dir / 'catalogs' / f'speccat{tie_vdisp_text}{snr_cut_text}.csv', index=None)
+        df_spec.to_csv(args.output_dir / 'catalogs' / f'speccat{tie_vdisp_text}{tie_doublet_text}{snr_cut_text}.csv', index=None)
     
     print(f'Completed in {timedelta(seconds=(datetime.now() - start_time).seconds)}')

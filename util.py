@@ -57,6 +57,7 @@ def parse_args():
     parser.add_argument('--group_gap', metavar='group_gap', type=float, action='store', default=150, help='Wavelength window to consider for make friends-of-friends neighbouring line list, in Angstrom; default is 150')
     parser.add_argument('--fit_padding', metavar='fit_padding', type=float, action='store', default=20, help='Wavelength window to pad on either side of a neighbouring line list, in Angstrom; default is 10')
     parser.add_argument('--tie_vdisp', dest='tie_vdisp', action='store_true', default=False, help='Tie the velocity dispersion of all lines to be the same? Default is no.')
+    parser.add_argument('--tie_doublets', dest='tie_doublets', action='store_true', default=False, help='Tie the flux ratios of OIII and NII doublets to theoretical values? Default is no.')
     parser.add_argument('--ncores', metavar='ncores', type=int, action='store', default=None, help='Number of cores to use in parallel for line fitting; default is None, i.e. all available cores')
     parser.add_argument('--chop_fov', dest='chop_fov', action='store_true', default=False, help='Chop the FoV of cube to be a square? Default is no.')
 
