@@ -12,7 +12,7 @@
              run make_metallicity_sfr_maps.py --id 8512 --Zdiag R3 --Zbranch low --use_C25 --plot_met_sfr --snr_cut 3
              run make_metallicity_sfr_maps.py --do_all_obj --Zdiag R3 --Zbranch low --use_C25 --plot_all_quant --snr_cut 0
              run make_metallicity_sfr_maps.py --do_all_obj --Zdiag NB --plot_all_quant --snr_cut 0
-             run make_metallicity_sfr_maps.py --do_all_obj --Zdiag NB --plot_met_sfr --snr_cut 3 --tie_vdisp --tie_doublets
+             run make_metallicity_sfr_maps.py --do_all_obj --Zdiag NB --plot_all_quant --snr_cut 3 --tie_vdisp --tie_doublets
 '''
 
 from header import *

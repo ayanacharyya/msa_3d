@@ -10,7 +10,7 @@
              run make_msa3d_line_maps.py --id 2145 --debug_linefit 15,12
              run make_msa3d_line_maps.py --do_all_obj --save_linefit_plot --plot_line_flux_maps --plot_line_quant_maps --ncores 6
              run make_msa3d_line_maps.py --do_all_obj --make_speccat --snr_cut 3
-             run make_msa3d_line_maps.py --do_all_obj --make_speccat --snr_cut 3 --tie_vdisp --tie_doublets
+             run make_msa3d_line_maps.py --do_all_obj --make_speccat --snr_cut 3 --tie_vdisp --tie_doublets --save_linefit_plot --ncores 3
 '''
 
 from header import *
@@ -246,10 +246,13 @@ def linefit_spaxel(coords, cube, cube_err, rest_wave_arr, df_lines, line_groups,
     df_spec = df_spec[df_spec[flam_u_col] > 0]
 
     # ------------calling line fitter for this spaxel---------------
-    if len(df_spec) > 0:
-        fit_results_spaxel = linefit_spectrum(df_spec, df_lines, line_groups, args, i=i, j=j, flam_col=flam_col, flam_u_col=flam_u_col, wave_col=wave_col, label_col=label_col, cont_col=cont_col, flux_factor=flux_factor)                
-    elif not args.silent:
-        print(f'\t\t..no valid spectrum in this spaxel. Moving on..')
+    try:
+        if len(df_spec) > 0:
+            fit_results_spaxel = linefit_spectrum(df_spec, df_lines, line_groups, args, i=i, j=j, flam_col=flam_col, flam_u_col=flam_u_col, wave_col=wave_col, label_col=label_col, cont_col=cont_col, flux_factor=flux_factor)                
+        elif not args.silent:
+            print(f'\t\t..no valid spectrum in this spaxel. Moving on..')
+    except Exception as e:
+        print(f'\t\t..failed spectra fitting for this spaxel due to {e}. Moving on..')
 
     return (i, j, fit_results_spaxel)
 
